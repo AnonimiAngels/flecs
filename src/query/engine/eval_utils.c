@@ -52,21 +52,7 @@ void flecs_set_source_set_flag(
 {
     ecs_assert(field_index != -1, ECS_INTERNAL_ERROR, NULL);
     ECS_TERMSET_SET(it->up_fields, 1u << field_index);
-}
-
-ecs_table_range_t flecs_range_from_entity(
-    ecs_entity_t e,
-    const ecs_query_run_ctx_t *ctx)
-{
-    ecs_record_t *r = flecs_entities_get(ctx->world, e);
-    if (!r) {
-        return (ecs_table_range_t){ 0 };
-    }
-    return (ecs_table_range_t){
-        .table = r->table,
-        .offset = ECS_RECORD_TO_ROW(r->row),
-        .count = 1
-    };
+    ECS_CONST_CAST(int16_t*, it->columns)[field_index] = -1;
 }
 
 ecs_table_range_t flecs_query_var_get_range(
@@ -82,7 +68,7 @@ ecs_table_range_t flecs_query_var_get_range(
 
     ecs_entity_t entity = var->entity;
     if (entity && entity != EcsWildcard) {
-        var->range = flecs_range_from_entity(entity, ctx);
+        var->range = flecs_range_from_entity(ctx->world, entity);
         return var->range;
     }
 
@@ -101,7 +87,7 @@ ecs_table_t* flecs_query_var_get_table(
 
     ecs_entity_t entity = var->entity;
     if (entity && entity != EcsWildcard) {
-        var->range = flecs_range_from_entity(entity, ctx);
+        var->range = flecs_range_from_entity(ctx->world, entity);
         return var->range.table;
     }
 
@@ -131,13 +117,13 @@ ecs_table_range_t flecs_query_get_range(
     ecs_flags16_t flags = flecs_query_ref_flags(op->flags, ref_kind);
     if (flags & EcsQueryIsEntity) {
         ecs_assert(!(flags & EcsQueryIsVar), ECS_INTERNAL_ERROR, NULL);
-        return flecs_range_from_entity(ref->entity, ctx);
+        return flecs_range_from_entity(ctx->world, ref->entity);
     } else {
         ecs_var_t *var = &ctx->vars[ref->var];
         if (var->range.table) {
             return ctx->vars[ref->var].range;
         } else if (var->entity) {
-            return flecs_range_from_entity(var->entity, ctx);
+            return flecs_range_from_entity(ctx->world, var->entity);
         }
     }
     return (ecs_table_range_t){0};
@@ -192,26 +178,44 @@ void flecs_query_var_set_range(
     };
 }
 
-void flecs_query_var_narrow_range(
-    ecs_var_id_t var_id,
-    ecs_table_t *table,
-    int32_t offset,
-    int32_t count,
+void flecs_query_src_set_single(
+    const ecs_query_op_t *op,
+    int32_t row,
     const ecs_query_run_ctx_t *ctx)
-{    
-    ecs_var_t *var = &ctx->vars[var_id];
+{
+    if (!(op->flags & (EcsQueryIsVar << EcsQuerySrc))) {
+        return;
+    }
+
+    ecs_var_id_t src = op->src.var;
+    ecs_var_t *var = &ctx->vars[src];
+
+    ecs_assert(var->range.table != NULL, ECS_INTERNAL_ERROR, NULL);
+    var->range.offset = row;
+    var->range.count = 1;
+
+    var->entity = ecs_table_entities(var->range.table)[row];
+}
+
+void flecs_query_src_set_range(
+    const ecs_query_op_t *op,
+    const ecs_table_range_t *range,
+    const ecs_query_run_ctx_t *ctx)
+{
+    if (!(op->flags & (EcsQueryIsVar << EcsQuerySrc))) {
+        return;
+    }
+
+    ecs_var_id_t src = op->src.var;
+    ecs_var_t *var = &ctx->vars[src];
     
     var->entity = 0;
-    var->range = (ecs_table_range_t){ 
-        .table = table,
-        .offset = offset,
-        .count = count
-    };
+    ecs_assert(var->range.table == range->table, ECS_INTERNAL_ERROR, NULL);
+    var->range = *range;
 
-    ecs_assert(var_id < ctx->query->var_count, ECS_INTERNAL_ERROR, NULL);
-    if (ctx->query_vars[var_id].kind != EcsVarTable) {    
-        ecs_assert(count == 1, ECS_INTERNAL_ERROR, NULL);
-        var->entity = ecs_table_entities(table)[offset];
+    if (ctx->query_vars[src].kind != EcsVarTable) {    
+        ecs_assert(range->count == 1, ECS_INTERNAL_ERROR, NULL);
+        var->entity = ecs_table_entities(range->table)[range->offset];
     }
 }
 
@@ -266,7 +270,7 @@ ecs_table_range_t flecs_get_ref_range(
     const ecs_query_run_ctx_t *ctx)
 {
     if (flag & EcsQueryIsEntity) {
-        return flecs_range_from_entity(ref->entity, ctx);
+        return flecs_range_from_entity(ctx->world, ref->entity);
     } else if (flag & EcsQueryIsVar) {
         return flecs_query_var_get_range(ref->var, ctx);
     }
@@ -347,8 +351,12 @@ void flecs_query_it_set_tr(
 {
     ecs_assert(field_index >= 0, ECS_INTERNAL_ERROR, NULL);
     it->trs[field_index] = tr;
+    ECS_CONST_CAST(int16_t*, it->columns)[field_index] =
+        (tr && !it->sources[field_index] &&
+            !(it->up_fields & (1llu << field_index))) ? tr->column : -1;
 }
 
+static
 ecs_id_t flecs_query_it_set_id(
     ecs_iter_t *it,
     ecs_table_t *table,

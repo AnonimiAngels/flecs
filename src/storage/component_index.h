@@ -35,6 +35,20 @@ typedef struct ecs_pair_record_t {
     /* Vector with ordered children */
     ecs_vec_t ordered_children;
 
+    /* Tables with non-fragmenting children */
+    ecs_map_t children_tables; /* map<table_id, ecs_parent_record_t> */
+
+    /* Track how many of the tables in children_tables are disabled. Used by
+     * queries to determine whether logic is needed to skip Disabled entities
+     * when iterating the ordered_children vector. */
+    int32_t disabled_tables;
+
+    /* Same for prefab tables */
+    int32_t prefab_tables;
+
+    /* Hierarchy depth (set for ChildOf pair) */
+    int32_t depth;
+
     /* Lists for all id records that match a pair wildcard. The wildcard id
      * record is at the head of the list. */
     ecs_id_record_elem_t first;   /* (R, *) */
@@ -81,12 +95,14 @@ struct ecs_component_record_t {
 
     /* Refcount */
     int32_t refcount;
-
-    /* Keep alive count. This count must be 0 when the component record is deleted. If
-     * it is not 0, an application attempted to delete an id that was still
-     * queried for. */
-    int32_t keep_alive;
 };
+
+/* Iterator over all component records in the world */
+typedef struct ecs_components_iter_t {
+    int32_t lo;
+    bool hi;
+    ecs_map_iter_t map_it;
+} ecs_components_iter_t;
 
 /* Bootstrap cached id records */
 void flecs_components_init(
@@ -95,11 +111,6 @@ void flecs_components_init(
 /* Cleanup all id records in world */
 void flecs_components_fini(
     ecs_world_t *world);
-
-/* Ensure component record for id */
-ecs_component_record_t* flecs_components_ensure(
-    ecs_world_t *world,
-    ecs_id_t id);
 
 /* Increase refcount of component record */
 void flecs_component_claim(
@@ -112,7 +123,7 @@ int32_t flecs_component_release(
     ecs_component_record_t *cr);
 
 /* Release all empty tables in component record */
-void flecs_component_release_tables(
+bool flecs_component_release_tables(
     ecs_world_t *world,
     ecs_component_record_t *cr);
 
@@ -133,6 +144,11 @@ ecs_component_record_t* flecs_component_second_next(
 /* Return next traversable (*, T) record */
 ecs_component_record_t* flecs_component_trav_next(
     ecs_component_record_t *cr);
+
+/* Return next component record, or NULL when iteration is done. */
+ecs_component_record_t* flecs_components_next(
+    const ecs_world_t *world,
+    ecs_components_iter_t *it);
 
 /* Ensure name index for component record */
 ecs_hashmap_t* flecs_component_name_index_ensure(
@@ -164,6 +180,24 @@ void flecs_component_record_init_dont_fragment(
     ecs_component_record_t *cr);
 
 void flecs_component_record_init_exclusive(
+    ecs_world_t *world,
+    ecs_component_record_t *cr);
+
+void flecs_component_shrink(
+    ecs_component_record_t *cr);
+
+void flecs_component_update_childof_depth(
+    ecs_world_t *world,
+    ecs_component_record_t *cr,
+    ecs_entity_t tgt,
+    const ecs_record_t *tgt_record);
+
+void flecs_component_update_childof_w_depth(
+    ecs_world_t *world,
+    ecs_component_record_t *cr,
+    int32_t depth);
+
+void flecs_component_ordered_children_init(
     ecs_world_t *world,
     ecs_component_record_t *cr);
 

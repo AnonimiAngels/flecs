@@ -49,6 +49,7 @@ struct each_delegate;
 
 // C++ utilities
 #include "utils/utils.hpp"
+#include "utils/map.hpp"
 
 // Mixin forward declarations
 #include "mixins/id/decl.hpp"
@@ -106,6 +107,7 @@ struct each_delegate;
 #include "entity.hpp"
 #include "delegate.hpp"
 #include "component.hpp"
+#include "mixins/query/sparse_query.hpp"
 #include "type.hpp"
 #include "table.hpp"
 #include "utils/iterable.hpp"
@@ -130,9 +132,6 @@ struct each_delegate;
 #endif
 #ifdef FLECS_TIMER
 #include "mixins/timer/impl.hpp"
-#endif
-#ifdef FLECS_DOC
-#include "mixins/doc/impl.hpp"
 #endif
 #ifdef FLECS_DOC
 #include "mixins/doc/impl.hpp"
@@ -165,7 +164,7 @@ struct each_delegate;
 
 /**
  * @defgroup cpp_core Core
- * Core ECS functionality (entities, storage, queries)
+ * Core ECS functionality (entities, storage, queries).
  *
  * @{
  * @}

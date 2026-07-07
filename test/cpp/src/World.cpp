@@ -317,21 +317,6 @@ void World_reregister_namespace(void) {
     test_assert(p_id_1 == p_id_2);
 }
 
-void World_reregister_after_reset_different_name(void) {
-    install_test_abort();
-
-    flecs::world ecs;
-
-    test_expect_abort();    
-
-    ecs.component<Position>("Position");
-
-    // Simulate different binary
-    flecs::_::type<Position>::reset();
-
-    ecs.component<Position>("Velocity");
-}
-
 void World_reregister_after_delete(void) {
     flecs::world ecs;
 
@@ -351,28 +336,6 @@ void World_reregister_after_delete(void) {
     test_str(d.name(), "Position");
     test_str(d.path(), "::Position");
     test_str(d.symbol(), "Position");
-}
-
-void World_register_component_w_reset_in_multithreaded(void) {
-    flecs::world ecs;
-
-    ecs.set_threads(2);
-
-    flecs::entity pos = ecs.component<Position>();
-    flecs::entity e = ecs.entity();
-
-    flecs::_::type<Position>::reset();
-
-    ecs.readonly_begin();
-    e.set<Position>({10, 20});
-    ecs.readonly_end();
-
-    test_assert(e.has<Position>());
-    test_assert(e.has(pos));
-    const Position *p = e.try_get<Position>();
-    test_assert(p != nullptr);
-    test_int(p->x, 10);
-    test_int(p->y, 20);
 }
 
 struct Module { };
@@ -960,7 +923,7 @@ void World_with_scope_no_lambda(void) {
     flecs::world ecs;
 
     auto parent = ecs.entity("Parent");
-    auto child = ecs.scope(parent).entity("Child");
+    auto child = ecs.entity(parent, "Child");
 
     test_assert(child.has(flecs::ChildOf, parent));
     test_assert(ecs.get_scope() == 0);
@@ -969,7 +932,7 @@ void World_with_scope_no_lambda(void) {
 void World_with_scope_type_no_lambda(void) {
     flecs::world ecs;
 
-    auto child = ecs.scope<ParentScope>().entity("Child");
+    auto child = ecs.entity(ecs.id<ParentScope>(), "Child");
 
     test_assert(child.has(flecs::ChildOf, ecs.id<ParentScope>()));
     test_assert(ecs.get_scope() == 0);
@@ -1672,7 +1635,7 @@ void World_set_lookup_path(void) {
     flecs::world ecs;
 
     auto parent = ecs.entity("Parent");
-    auto child = ecs.scope(parent).entity("Child");
+    auto child = ecs.entity(parent, "Child");
 
     test_assert(ecs.lookup("Parent") == parent);
     test_assert(ecs.lookup("Child") == 0);
@@ -1773,6 +1736,17 @@ void World_reset_world(void) {
     test_assert(!ecs.exists(e));
 }
 
+void World_reset_set_rest_after_reset(void) {
+    flecs::world ecs;
+    // Ensure calling set after reset does not assert. This tests whether
+    // the built-in components are properly re-initialized after a world reset.
+    ecs.reset();
+    ecs.set<flecs::Rest>({});
+
+    const flecs::Rest *r = ecs.try_get<flecs::Rest>();
+    test_assert(r != NULL);
+}
+
 void World_id_from_pair_type(void) {
     flecs::world ecs;
 
@@ -1787,7 +1761,7 @@ void World_scope_w_name(void) {
     flecs::world ecs;
 
     flecs::entity parent = ecs.entity("parent");
-    flecs::entity child = ecs.scope("parent").entity();
+    flecs::entity child = ecs.entity(parent, nullptr);
 
     test_assert(child.has(flecs::ChildOf, parent));
 }

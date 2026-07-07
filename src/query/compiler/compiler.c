@@ -1,5 +1,5 @@
 /**
- * @file query/compiler/compile.c
+ * @file query/compiler/compiler.c
  * @brief Compile query program from query.
  */
 
@@ -271,7 +271,7 @@ int flecs_query_discover_vars(
         bool first_is_this = 
             (ECS_TERM_REF_ID(first) == EcsThis) && (first->id & EcsIsVariable);
         bool second_is_this = 
-            (ECS_TERM_REF_ID(first) == EcsThis) && (first->id & EcsIsVariable);
+            (ECS_TERM_REF_ID(second) == EcsThis) && (second->id & EcsIsVariable);
 
         if (first_is_this || second_is_this) {
             if (!table_this) {
@@ -297,7 +297,7 @@ int flecs_query_discover_vars(
                 var->table_id = base_table_id;
             } else if (anonymous_table_count) {
                 /* Scan for implicit anonymous table variables that haven't been
-                 * inserted yet (happens after this step). Doing this here vs.
+                 * inserted yet (happens after this step). Doing this here
                  * ensures that anonymous variables are appended at the end of
                  * the variable array, while also ensuring that variable ids are
                  * stable (no swapping of table var ids that are in use). */
@@ -395,9 +395,16 @@ int flecs_query_discover_vars(
     query->vars = query_vars;
     query->var_count = var_count;
     query->pub.var_count = flecs_ito(int8_t, var_count);
-    ECS_BIT_COND(query->pub.flags, EcsQueryHasTableThisVar, 
+    ECS_BIT_COND(query->pub.flags, EcsQueryHasTableThisVar,
         !entity_before_table_this);
     query->var_size = var_count + anonymous_count;
+
+    if (query->var_size > EcsQueryMaxVarCount) {
+        ecs_err(
+            "query has too many (%d) variables (maximum is %d)",
+            query->var_size, EcsQueryMaxVarCount);
+        goto error;
+    }
 
     char **var_names;
     if (query_vars != &flecs_this_array) {
@@ -585,7 +592,7 @@ void flecs_query_insert_trivial_search(
             continue;
         }
 
-        /* We can only add trivial terms to plan if they no up traversal */
+        /* We can only add trivial terms to plan if they have no up traversal */
         if ((term->src.id & EcsTraverseFlags) != EcsSelf) {
             continue;
         }
@@ -600,7 +607,26 @@ void flecs_query_insert_trivial_search(
         trivial_terms ++;
     }
 
-    if (trivial_terms >= 2) {
+    bool first_uncompiled_dont_fragment = false;
+    for (i = 0; i < term_count; i ++) {
+        if (*compiled & (1ull << i)) {
+            continue;
+        }
+
+        ecs_term_t *term = &terms[i];
+        first_uncompiled_dont_fragment =
+            (term->flags_ & EcsTermDontFragment) &&
+                !(trivial_set & (1llu << i)) &&
+                (term->oper == EcsAnd) &&
+                !flecs_term_is_or(q, term) &&
+                ecs_term_match_this(term) &&
+                ((term->src.id & EcsTraverseFlags) == EcsSelf) &&
+                !(term->flags_ & EcsTermIsScope) &&
+                !ecs_id_is_wildcard(term->id);
+        break;
+    }
+
+    if (trivial_terms >= 2 || (trivial_terms && first_uncompiled_dont_fragment)) {
         /* Mark terms as compiled & populated */
         for (i = 0; i < q->term_count; i ++) {
             if (trivial_set & (1llu << i)) {
@@ -634,6 +660,8 @@ void flecs_query_insert_cache_search(
     }
 
     ecs_query_t *q = &query->pub;
+    int32_t childof_term = -1;
+    bool has_childof_trav = false;
 
     if (q->cache_kind == EcsQueryCacheAll) {
         /* If all terms are cacheable, make sure no other terms are compiled */
@@ -653,6 +681,16 @@ void flecs_query_insert_cache_search(
                 continue;
             }
 
+            if (term->flags_ & EcsTermNonFragmentingChildOf) {
+                if (!term->trav) {
+                    childof_term = i;
+                }
+            }
+
+            if (term->trav == EcsChildOf) {
+                has_childof_trav = true;
+            }
+
             *compiled |= (1ull << i);
         }
     }
@@ -669,6 +707,35 @@ void flecs_query_insert_cache_search(
     flecs_query_write(0, &op.written);
     flecs_query_write_ctx(0, ctx, false);
     flecs_query_op_insert(&op, ctx);
+
+    if (childof_term != -1) {
+        flecs_query_compile_term(
+            q->world, query, &q->terms[childof_term], ctx);
+    }
+
+    if (has_childof_trav) {
+        ecs_term_t *terms = q->terms;
+        int32_t i, count = q->term_count;
+
+        for (i = 0; i < count; i ++) {
+            ecs_term_t *term = &terms[i];
+            if (!((*compiled) & (1ull << i))) {
+                continue;
+            }
+
+            if (!(term->flags_ & EcsTermIsCacheable)) {
+                continue;
+            }
+
+            if (term->trav == EcsChildOf && (term->oper == EcsAnd || term->oper == EcsOptional)) {
+                ecs_oper_kind_t oper = q->terms[i].oper;
+                q->terms[i].oper = EcsAnd;
+                flecs_query_compile_term(
+                    q->world, query, &q->terms[i], ctx);
+                q->terms[i].oper = (int16_t)oper;
+            }
+        }
+    }
 }
 
 static
@@ -731,11 +798,11 @@ int flecs_query_insert_toggle(
 
                 /* Source matches, set flag */
                 if (term->oper == EcsNot) {
-                    not_toggles |= (1llu << j);
+                    not_toggles |= (1llu << term->field_index);
                 } else if (term->oper == EcsOptional) {
-                    optional_toggles |= (1llu << j);
+                    optional_toggles |= (1llu << term->field_index);
                 } else {
-                    and_toggles |= (1llu << j);
+                    and_toggles |= (1llu << term->field_index);
                 }
 
                 fields_done |= (1llu << j);
@@ -768,11 +835,16 @@ int flecs_query_insert_toggle(
              * set, separate instructions let the query engine backtrack to get 
              * the right results. */
             if (optional_toggles) {
+                ecs_flags64_t optional_done = 0;
                 for (j = i; j < term_count; j ++) {
-                    uint64_t field_bit = 1ull << j;
-                    if (!(optional_toggles & field_bit)) {
+                    uint64_t field_bit = 1ull << terms[j].field_index;
+                    if (!(optional_toggles & field_bit) ||
+                        (optional_done & field_bit))
+                    {
                         continue;
                     }
+
+                    optional_done |= field_bit;
 
                     ecs_query_op_t op = {0};
                     op.kind = EcsQueryToggleOption;
@@ -852,7 +924,9 @@ int flecs_query_compile(
     
     if (query->cache) {
         if (flags & EcsQueryIsCacheable) {
-            needs_plan = false;
+            if (!(flags & EcsQueryCacheWithFilter)) {
+                needs_plan = false;
+            }
         }
     } else {
         ecs_flags32_t trivial_flags = EcsQueryIsTrivial|EcsQueryMatchOnlySelf;
@@ -880,7 +954,6 @@ int flecs_query_compile(
     ecs_vec_reset_t(NULL, &stage->operations, ecs_query_op_t);
     ctx.ops = &stage->operations;
     ctx.cur = ctx.ctrlflow;
-    ctx.cur->lbl_begin = -1;
     ctx.cur->lbl_begin = -1;
     ecs_vec_clear(ctx.ops);
 
@@ -958,8 +1031,8 @@ int flecs_query_compile(
 
             if (term->oper == EcsOptional && start_term) {
                 /* Don't reorder past the first optional term that's not in the
-                 * initial list of optional terms. This protects short
-                 * circuiting branching in the query. 
+                 * initial list of optional terms. This protects short-circuiting
+                 * branching in the query. 
                  * A future algorithm could look at which variables are 
                  * accessed by optional terms, and continue reordering terms 
                  * that don't access those variables. */
@@ -1001,6 +1074,20 @@ int flecs_query_compile(
             break;
         }
     } while (true);
+
+    /* If there is only one term and it's a Tree instruction, replace it
+     * with Children. If the queried-for parent has the OrderedChildren
+     * trait, the Children instruction will return the array with child
+     * entities vs. returning children one by one. */
+    if (term_count == 1 && ecs_vec_count(ctx.ops)) {
+        ecs_query_op_t *op = ecs_vec_last_t(ctx.ops, ecs_query_op_t);
+        ecs_assert(op != NULL, ECS_INTERNAL_ERROR, NULL);
+        if (op->kind == EcsQueryTree) {
+            op->kind = EcsQueryChildren;
+        } else if (op->kind == EcsQueryTreeWildcard) {
+            op->kind = EcsQueryChildrenWc;
+        }
+    }
 
     ecs_var_id_t this_id = flecs_query_find_var_id(query, "this", EcsVarEntity);
     if (this_id != EcsVarNone) {

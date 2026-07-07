@@ -3303,7 +3303,7 @@ struct Movement {
 
 // Register 'Movement' component and reflection data
 world.component<Movement>()
-  .member("value", &Movement::value);
+  .member(&Movement::value, "value");
 
 // Create two entities for the direction
 flecs::entity Left = world.entity();
@@ -3907,12 +3907,15 @@ ecs_query_t *q = ecs_query(world, {
 The following example shows a query that uses component inheritance to match entities:
 
 ```cpp
-flecs::entity Unit = world.entity();
-flecs::entity MeleeUnit = world.entity().is_a(Unit);
-flecs::entity RangedUnit = world.entity().is_a(Unit);
+struct Unit { };
+struct MeleeUnit { };
+struct RangedUnit { };
 
-flecs::entity unit_01 = world.entity().add(MeleeUnit);
-flecs::entity unit_02 = world.entity().add(RangedUnit);
+world.component<MeleeUnit>().is_a<Unit>();
+world.component<RangedUnit>().is_a<Unit>();
+
+flecs::entity unit_01 = world.entity().add<MeleeUnit>();
+flecs::entity unit_02 = world.entity().add<RangedUnit>();
 
 // Matches entities with Unit, MeleeUnit and RangedUnit
 flecs::query<Unit> q = world.query<Unit>();

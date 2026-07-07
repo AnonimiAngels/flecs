@@ -1251,3 +1251,794 @@ void Cascade_recreate_after_remove_all(void) {
 
     ecs_fini(world);
 }
+
+void Cascade_nested_target_deletion(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ECS_TAG(world, Foo);
+    ECS_ENTITY(world, Rel, Traversable);
+
+    ecs_query_t *q = ecs_query(world, {
+        .terms = {{
+            Foo, .trav = Rel, .src.id = EcsSelf|EcsCascade
+        }}
+    });
+
+    test_assert(q != NULL);
+
+    ecs_entity_t left = ecs_new_w(world, Foo);
+    ecs_entity_t right = ecs_new_w(world, Foo);
+    ecs_entity_t mid = ecs_new_w(world, Foo);
+    ecs_entity_t root = ecs_new_w(world, Foo);
+
+    ecs_add_pair(world, root, Rel, left);
+    ecs_add_pair(world, root, Rel, mid);
+    ecs_add_pair(world, mid, Rel, right);
+
+    ecs_add_pair(world, left, EcsChildOf, root);
+    ecs_add_pair(world, mid, EcsChildOf, root);
+    ecs_add_pair(world, right, EcsChildOf, mid);
+
+    // Triggers cleanup logic which creates an intermediate table with one of
+    // the two pairs removed from root. The other pair contains a target that is
+    // no longer alive, which the cascade logic should be robust against.
+    // This is not a problem in practice, since the intermediate table will get
+    // cleaned immediately after and won't actually be used to store entities.
+    ecs_delete(world, root);
+
+    test_assert(!ecs_is_alive(world, left));
+    test_assert(!ecs_is_alive(world, mid));
+    test_assert(!ecs_is_alive(world, right));
+    test_assert(!ecs_is_alive(world, root));
+
+    ecs_fini(world);
+}
+
+void Cascade_parent_component(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ECS_COMPONENT(world, Position);
+
+    ecs_entity_t p0 = ecs_new(world);
+    ecs_set(world, p0, Position, {10, 20});
+    ecs_entity_t p1 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_set(world, p1, Position, {11, 21});
+    ecs_entity_t p2 = ecs_insert(world, ecs_value(EcsParent, {p1}));
+    ecs_set(world, p2, Position, {12, 22});
+
+    ecs_entity_t c0 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_entity_t c1 = ecs_insert(world, ecs_value(EcsParent, {p1}));
+    ecs_entity_t c2 = ecs_insert(world, ecs_value(EcsParent, {p2}));
+
+    ecs_query_t *q = ecs_query(world, {
+        .terms = {{ ecs_id(Position), .src.id = EcsCascade }}
+    });
+
+    test_assert(q != NULL);
+
+    ecs_iter_t it = ecs_query_iter(world, q);
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 20);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(p1, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 20);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1, it.entities[0]);
+    test_uint(p1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(p2, it.entities[0]);
+    test_uint(p1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2, it.entities[0]);
+    test_uint(p2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 22);
+    }
+
+    test_bool(false, ecs_query_next(&it));
+
+    ecs_query_fini(q);
+
+    ecs_fini(world);
+}
+
+void Cascade_parent_component_n_children(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ECS_COMPONENT(world, Position);
+
+    ecs_entity_t p0 = ecs_new(world);
+    ecs_set(world, p0, Position, {10, 20});
+    ecs_entity_t p1 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_set(world, p1, Position, {11, 21});
+    ecs_entity_t p2 = ecs_insert(world, ecs_value(EcsParent, {p1}));
+    ecs_set(world, p2, Position, {12, 22});
+
+    ecs_entity_t c0_1 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_entity_t c0_2 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_entity_t c1_1 = ecs_insert(world, ecs_value(EcsParent, {p1}));
+    ecs_entity_t c1_2 = ecs_insert(world, ecs_value(EcsParent, {p1}));
+    ecs_entity_t c2_1 = ecs_insert(world, ecs_value(EcsParent, {p2}));
+    ecs_entity_t c2_2 = ecs_insert(world, ecs_value(EcsParent, {p2}));
+
+    ecs_query_t *q = ecs_query(world, {
+        .terms = {{ ecs_id(Position), .src.id = EcsCascade }}
+    });
+
+    test_assert(q != NULL);
+
+    ecs_iter_t it = ecs_query_iter(world, q);
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0_1, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 20);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0_2, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 20);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(p1, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 20);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1_1, it.entities[0]);
+    test_uint(p1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1_2, it.entities[0]);
+    test_uint(p1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(p2, it.entities[0]);
+    test_uint(p1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2_1, it.entities[0]);
+    test_uint(p2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 22);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2_2, it.entities[0]);
+    test_uint(p2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 22);
+    }
+
+    test_bool(false, ecs_query_next(&it));
+
+    ecs_query_fini(q);
+
+    ecs_fini(world);
+}
+
+void Cascade_parent_component_n_parents_for_depth(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ECS_COMPONENT(world, Position);
+
+    ecs_entity_t p0 = ecs_new(world);
+    ecs_set(world, p0, Position, {10, 21});
+    ecs_entity_t p1_1 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_set(world, p1_1, Position, {11, 21});
+    ecs_entity_t p1_2 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_set(world, p1_2, Position, {11, 22});
+    ecs_entity_t p2_1 = ecs_insert(world, ecs_value(EcsParent, {p1_1}));
+    ecs_set(world, p2_1, Position, {12, 21});
+    ecs_entity_t p2_2 = ecs_insert(world, ecs_value(EcsParent, {p1_2}));
+    ecs_set(world, p2_2, Position, {12, 22});
+
+    ecs_entity_t c0_1 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_entity_t c0_2 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_entity_t c1_1 = ecs_insert(world, ecs_value(EcsParent, {p1_1}));
+    ecs_entity_t c1_2 = ecs_insert(world, ecs_value(EcsParent, {p1_2}));
+    ecs_entity_t c2_1 = ecs_insert(world, ecs_value(EcsParent, {p2_1}));
+    ecs_entity_t c2_2 = ecs_insert(world, ecs_value(EcsParent, {p2_2}));
+
+    ecs_query_t *q = ecs_query(world, {
+        .terms = {{ ecs_id(Position), .src.id = EcsCascade }}
+    });
+
+    test_assert(q != NULL);
+
+    ecs_iter_t it = ecs_query_iter(world, q);
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0_1, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0_2, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(p1_1, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(p1_2, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1_1, it.entities[0]);
+    test_uint(p1_1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1_2, it.entities[0]);
+    test_uint(p1_2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 22);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(p2_1, it.entities[0]);
+    test_uint(p1_1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(p2_2, it.entities[0]);
+    test_uint(p1_2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 22);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2_1, it.entities[0]);
+    test_uint(p2_1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2_2, it.entities[0]);
+    test_uint(p2_2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 22);
+    }
+
+    test_bool(false, ecs_query_next(&it));
+
+    ecs_query_fini(q);
+
+    ecs_fini(world);
+}
+
+void Cascade_parent_component_after_query(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ECS_COMPONENT(world, Position);
+
+    ecs_query_t *q = ecs_query(world, {
+        .terms = {{ ecs_id(Position), .src.id = EcsCascade }}
+    });
+
+    test_assert(q != NULL);
+
+    ecs_entity_t p0 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p0, Position, {10, 20});
+    ecs_entity_t p1 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p1, Position, {11, 21});
+    ecs_entity_t p2 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p2, Position, {12, 22});
+
+    ecs_entity_t c0 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_entity_t c1 = ecs_insert(world, ecs_value(EcsParent, {p1}));
+    ecs_entity_t c2 = ecs_insert(world, ecs_value(EcsParent, {p2}));
+
+    ecs_iter_t it = ecs_query_iter(world, q);
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 20);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1, it.entities[0]);
+    test_uint(p1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2, it.entities[0]);
+    test_uint(p2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 22);
+    }
+
+    test_bool(false, ecs_query_next(&it));
+
+    ecs_query_fini(q);
+
+    ecs_fini(world);
+}
+
+void Cascade_parent_component_n_children_after_query(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ECS_COMPONENT(world, Position);
+
+    ecs_query_t *q = ecs_query(world, {
+        .terms = {{ ecs_id(Position), .src.id = EcsCascade }}
+    });
+
+    test_assert(q != NULL);
+
+    ecs_entity_t p0 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p0, Position, {10, 20});
+    ecs_entity_t p1 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p1, Position, {11, 21});
+    ecs_entity_t p2 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p2, Position, {12, 22});
+
+    ecs_entity_t c0_1 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_entity_t c0_2 = ecs_insert(world, ecs_value(EcsParent, {p0}));
+    ecs_entity_t c1_1 = ecs_insert(world, ecs_value(EcsParent, {p1}));
+    ecs_entity_t c1_2 = ecs_insert(world, ecs_value(EcsParent, {p1}));
+    ecs_entity_t c2_1 = ecs_insert(world, ecs_value(EcsParent, {p2}));
+    ecs_entity_t c2_2 = ecs_insert(world, ecs_value(EcsParent, {p2}));
+
+    ecs_iter_t it = ecs_query_iter(world, q);
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0_1, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 20);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0_2, it.entities[0]);
+    test_uint(p0, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 20);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1_1, it.entities[0]);
+    test_uint(p1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1_2, it.entities[0]);
+    test_uint(p1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2_1, it.entities[0]);
+    test_uint(p2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 22);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2_2, it.entities[0]);
+    test_uint(p2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 22);
+    }
+
+    test_bool(false, ecs_query_next(&it));
+
+    ecs_query_fini(q);
+
+    ecs_fini(world);
+}
+
+void Cascade_parent_component_n_parents_for_depth_after_query(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ECS_COMPONENT(world, Position);
+
+    ecs_query_t *q = ecs_query(world, {
+        .terms = {{ ecs_id(Position), .src.id = EcsCascade }}
+    });
+
+    test_assert(q != NULL);
+
+    ecs_entity_t p0_1 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p0_1, Position, {10, 21});
+    ecs_entity_t p0_2 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p0_2, Position, {10, 22});
+    ecs_entity_t p1_1 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p1_1, Position, {11, 21});
+    ecs_entity_t p1_2 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p1_2, Position, {11, 22});
+    ecs_entity_t p2_1 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p2_1, Position, {12, 21});
+    ecs_entity_t p2_2 = ecs_new_w_id(world, EcsOrderedChildren);
+    ecs_set(world, p2_2, Position, {12, 22});
+
+    ecs_entity_t c0_1 = ecs_insert(world, ecs_value(EcsParent, {p0_1}));
+    ecs_entity_t c0_2 = ecs_insert(world, ecs_value(EcsParent, {p0_2}));
+    ecs_entity_t c1_1 = ecs_insert(world, ecs_value(EcsParent, {p1_1}));
+    ecs_entity_t c1_2 = ecs_insert(world, ecs_value(EcsParent, {p1_2}));
+    ecs_entity_t c2_1 = ecs_insert(world, ecs_value(EcsParent, {p2_1}));
+    ecs_entity_t c2_2 = ecs_insert(world, ecs_value(EcsParent, {p2_2}));
+
+    ecs_iter_t it = ecs_query_iter(world, q);
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0_1, it.entities[0]);
+    test_uint(p0_1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c0_2, it.entities[0]);
+    test_uint(p0_2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 10); test_int(p->y, 22);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1_1, it.entities[0]);
+    test_uint(p1_1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c1_2, it.entities[0]);
+    test_uint(p1_2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 11); test_int(p->y, 22);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2_1, it.entities[0]);
+    test_uint(p2_1, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 21);
+    }
+
+    test_bool(true, ecs_query_next(&it));
+    test_int(1, it.count);
+    test_uint(c2_2, it.entities[0]);
+    test_uint(p2_2, ecs_field_src(&it, 0));
+    test_uint(ecs_id(Position), ecs_field_id(&it, 0));
+    {
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 12); test_int(p->y, 22);
+    }
+
+    test_bool(false, ecs_query_next(&it));
+
+    ecs_query_fini(q);
+
+    ecs_fini(world);
+}
+
+void Cascade_cascade_optional_change_detection_after_remove(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ECS_COMPONENT(world, Position);
+    ECS_COMPONENT(world, Velocity);
+
+    ecs_entity_t root = ecs_entity(world, { .name = "root" });
+    ecs_set(world, root, Position, {10, 20});
+
+    ecs_entity_t child = ecs_entity(world, { .name = "child" });
+    ecs_add_pair(world, child, EcsChildOf, root);
+    ecs_set(world, child, Velocity, {1, 2});
+    ecs_set(world, child, Position, {30, 40});
+
+    ecs_query_t *q = ecs_query(world, {
+        .terms = {
+            { .id = ecs_id(Position), .inout = EcsOut },
+            { .id = ecs_id(Position), .src.id = EcsCascade, .oper = EcsOptional, .inout = EcsIn },
+            { .id = ecs_id(Velocity), .oper = EcsOptional, .inout = EcsInOut },
+        },
+        .flags = EcsQueryDetectChanges,
+    });
+    test_assert(q != NULL);
+
+    {
+        ecs_iter_t it = ecs_query_iter(world, q);
+
+        test_bool(true, ecs_query_next(&it));
+        test_int(1, it.count);
+        test_uint(root, it.entities[0]);
+        test_bool(true, ecs_field_is_set(&it, 0));
+        test_bool(false, ecs_field_is_set(&it, 1));
+        test_bool(false, ecs_field_is_set(&it, 2));
+        test_bool(true, ecs_iter_changed(&it));
+
+        test_bool(true, ecs_query_next(&it));
+        test_int(1, it.count);
+        test_uint(child, it.entities[0]);
+        test_bool(true, ecs_field_is_set(&it, 0));
+        test_bool(true, ecs_field_is_set(&it, 1));
+        test_uint(root, it.sources[1]);
+        test_bool(true, ecs_field_is_set(&it, 2));
+        test_bool(true, ecs_iter_changed(&it));
+
+        test_bool(false, ecs_query_next(&it));
+    }
+
+    ecs_remove(world, root, Position);
+
+    {
+        ecs_iter_t it = ecs_query_iter(world, q);
+
+        test_bool(true, ecs_query_next(&it));
+        test_int(1, it.count);
+        test_uint(child, it.entities[0]);
+        test_bool(true, ecs_field_is_set(&it, 0));
+        test_bool(false, ecs_field_is_set(&it, 1));
+        test_uint(0, it.sources[1]);
+        test_bool(true, ecs_field_is_set(&it, 2));
+
+        Position *p = ecs_field(&it, Position, 0);
+        test_assert(p != NULL);
+        test_int(p->x, 30); test_int(p->y, 40);
+        Velocity *v = ecs_field(&it, Velocity, 2);
+        test_assert(v != NULL);
+        test_int(v->x, 1); test_int(v->y, 2);
+
+        test_bool(false, ecs_iter_changed(&it));
+
+        test_bool(false, ecs_query_next(&it));
+    }
+
+    {
+        ecs_iter_t it = ecs_query_iter(world, q);
+
+        test_bool(true, ecs_query_next(&it));
+        test_uint(child, it.entities[0]);
+        test_bool(false, ecs_iter_changed(&it));
+
+        test_bool(false, ecs_query_next(&it));
+    }
+
+    ecs_set(world, child, Velocity, {3, 4});
+
+    {
+        ecs_iter_t it = ecs_query_iter(world, q);
+
+        test_bool(true, ecs_query_next(&it));
+        test_uint(child, it.entities[0]);
+        test_bool(true, ecs_iter_changed(&it));
+
+        test_bool(false, ecs_query_next(&it));
+    }
+
+    ecs_query_fini(q);
+
+    ecs_fini(world);
+}
+
+void Cascade_two_cascade_terms(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ECS_TAG(world, Position);
+
+    ecs_log_set_level(-4);
+
+    ecs_query_t *q = ecs_query(world, {
+        .expr = "Position(cascade),*(cascade)"
+    });
+
+    test_assert(q == NULL);
+
+    ecs_fini(world);
+}
+
+void Cascade_cascade_in_or_chain(void) {
+    ecs_world_t *world = ecs_mini();
+
+    ecs_log_set_level(-4);
+
+    ecs_query_t *q = ecs_query(world, {
+        .expr = "toggle|$l||toggle|$n(cascade)"
+    });
+
+    test_assert(q == NULL);
+
+    ecs_fini(world);
+}

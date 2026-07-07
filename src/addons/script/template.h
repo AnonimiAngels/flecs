@@ -26,6 +26,12 @@ struct ecs_script_template_t {
 
     /* Type info for template component */
     const ecs_type_info_t *type_info;
+
+    /* Annotations to apply to template instance */
+    ecs_vec_t annot;
+
+    /* Use non-fragmenting hierarchy */
+    bool non_fragmenting_parent;
 };
 
 #define ECS_TEMPLATE_SMALL_SIZE (36)
@@ -46,9 +52,6 @@ typedef struct EcsScriptTemplateSetEvent {
 int flecs_script_eval_template(
     ecs_script_eval_visitor_t *v,
     ecs_script_template_node_t *template);
-
-ecs_script_template_t* flecs_script_template_init(
-    ecs_script_impl_t *script);
 
 void flecs_script_template_fini(
     ecs_script_impl_t *script,

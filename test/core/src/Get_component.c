@@ -261,7 +261,7 @@ void Get_component_get_wildcard(void) {
     ECS_COMPONENT(world, Position);
     ECS_TAG(world, Tgt);
 
-    ecs_entity_t e = ecs_insert(world, ecs_value_pair(Position, Tgt, {10, 20}));
+    ecs_entity_t e = ecs_insert(world, ecs_pair_value(Position, Tgt, {10, 20}));
     test_assert(e != 0);
     test_assert(ecs_has_pair(world, e, ecs_id(Position), Tgt));
 
@@ -278,6 +278,22 @@ void Get_component_get_wildcard(void) {
         test_int(p->x, 10);
         test_int(p->y, 20);
     }
+
+    ecs_fini(world);
+}
+
+void Get_component_get_inherited_tag_w_isa(void) {
+    ecs_world_t *world = ecs_init();
+
+    ecs_entity_t Tag = ecs_new(world);
+    ecs_add_pair(world, Tag, EcsOnInstantiate, EcsInherit);
+
+    ecs_entity_t base = ecs_new_w_id(world, Tag);
+    ecs_entity_t inst = ecs_new_w_pair(world, EcsIsA, base);
+
+    test_assert(ecs_has_id(world, inst, Tag));
+    const void *ptr = ecs_get_id(world, inst, Tag);
+    test_assert(ptr == NULL);
 
     ecs_fini(world);
 }

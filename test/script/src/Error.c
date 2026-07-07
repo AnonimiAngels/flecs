@@ -13,7 +13,32 @@ void Error_multi_line_comment_after_newline_before_newline_scope_open(void) {
     LINE "Foo{}";
 
     ecs_log_set_level(-4); /* Newline after multiline comment is not ignored */
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_unterminated_multi_line_comment_after_line_comment(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Parent"
+    LINE "// Some comment"
+    LINE "/* unterminated multiline comment"
+    LINE "{"
+    LINE " Child{}"
+    LINE "}";
+
+    ecs_log_set_level(-4);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -26,7 +51,11 @@ void Error_missing_end_of_scope(void) {
     HEAD "Parent {"
     LINE " Child {}";
 
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     test_assert(ecs_get_scope(world) == 0);
     test_assert(ecs_get_with(world) == 0);
@@ -57,7 +86,11 @@ void Error_with_n_tags_2_levels_invalid_tag(void) {
     LINE "HelloC {}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 5);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -69,7 +102,11 @@ void Error_assignment_to_non_component(void) {
     HEAD "Foo { Position: {x: 10, y: 20} }";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -83,7 +120,11 @@ void Error_struct_w_member_w_assignment_to_nothing(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -97,7 +138,11 @@ void Error_struct_w_member_w_assignment_to_empty_scope(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -110,7 +155,11 @@ void Error_invalid_nested_assignment(void) {
     LINE "Bar { Hello }";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -122,7 +171,11 @@ void Error_invalid_partial_pair_assignment(void) {
     HEAD "Foo { (Hello, }";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -134,7 +187,11 @@ void Error_empty_assignment(void) {
     HEAD "Foo {";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -146,7 +203,11 @@ void Error_empty_assignment_before_end_of_scope(void) {
     HEAD "{Foo {}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -161,7 +222,11 @@ void Error_default_type_with_tag(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -179,7 +244,11 @@ void Error_invalid_oneof(void) {
     LINE "}"
     LINE "e { (Color, Foo) }";
 
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 6);
+    ecs_os_free(result.error);
 
     ecs_entity_t color = ecs_lookup(world, "Color");
     ecs_entity_t foo = ecs_lookup(world, "Foo");
@@ -212,7 +281,26 @@ void Error_unterminated_multiline_string(void) {
     LINE "}}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_unterminated_string_ending_with_backslash(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr = "e { x: \"abc\\";
+
+    ecs_log_set_level(-4);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -231,7 +319,11 @@ void Error_invalid_assign_multiline_string(void) {
     HEAD "Foo { String: {value: `foo`} }";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -244,7 +336,11 @@ void Error_const_var_redeclare(void) {
     LINE "const var_x = 20";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -266,7 +362,11 @@ void Error_typed_const_w_composite_type_invalid_assignment(void) {
     LINE "";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -292,7 +392,11 @@ void Error_unterminated_multi_line_comment_in_value(void) {
     LINE "  y: 20\n"
     LINE "}}";
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 6);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -311,7 +415,11 @@ void Error_pair_w_rel_var_invalid_type(void) {
     LINE "\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 6);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -330,7 +438,11 @@ void Error_pair_w_tgt_var_invalid_type(void) {
     LINE "\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 6);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -345,7 +457,11 @@ void Error_with_value_not_a_component(void) {
     LINE "\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -370,7 +486,11 @@ void Error_tag_in_with_scope(void) {
     LINE "\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 4);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -391,7 +511,11 @@ void Error_tag_in_with_scope_2(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 5);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -413,7 +537,11 @@ void Error_pair_tag_in_with_scope_2(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -438,7 +566,11 @@ void Error_component_in_with_scope(void) {
     LINE "\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 4);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -482,7 +614,11 @@ void Error_component_in_with_scope_2(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 5);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -514,7 +650,11 @@ void Error_component_in_with_scope_3(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 9);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -548,7 +688,11 @@ void Error_component_in_with_scope_4(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 11);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -583,7 +727,11 @@ void Error_component_in_with_scope_5(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 12);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -619,7 +767,11 @@ void Error_component_in_with_in_template(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 8);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -655,7 +807,11 @@ void Error_component_in_with_scope_nested(void) {
     LINE "\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 6);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -681,7 +837,11 @@ void Error_component_in_with_scope_after_entity(void) {
     LINE "";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -707,7 +867,11 @@ void Error_component_in_with_var_scope(void) {
     LINE "";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -781,7 +945,11 @@ void Error_not_an_array_component(void) {
     LINE "foo { Position: [10, 20] }\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -801,7 +969,11 @@ void Error_array_component_w_curly_brackets(void) {
     LINE "foo { Position: {10, 20} }\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -819,7 +991,11 @@ void Error_unknown_identifier(void) {
     LINE "Foo { Comp: {A} }";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 7);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -837,7 +1013,11 @@ void Error_unknown_identifier_for_int_field(void) {
     LINE "Foo { Comp: {A} }";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 7);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -849,7 +1029,11 @@ void Error_prefab_w_slot_no_parent(void) {
     HEAD "slot Base {}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -863,7 +1047,11 @@ void Error_tag_not_found(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -877,7 +1065,11 @@ void Error_component_not_found(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -893,7 +1085,11 @@ void Error_pair_first_not_found(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -909,7 +1105,11 @@ void Error_pair_second_not_found(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -923,7 +1123,11 @@ void Error_kind_not_found(void) {
     HEAD "Foo Bar";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -937,7 +1141,11 @@ void Error_base_not_found(void) {
     HEAD "Foo : Bar";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -978,7 +1186,11 @@ void Error_member_expr_without_value_end_of_scope(void) {
     });
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, "Position(x:)", NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, "Position(x:)", &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -997,7 +1209,11 @@ void Error_member_expr_without_value_comma(void) {
     });
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, "Position(x:,0)", NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, "Position(x:,0)", &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1016,7 +1232,11 @@ void Error_member_expr_without_value_newline(void) {
     });
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, "Position(x:\n)", NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, "Position(x:\n)", &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1035,7 +1255,11 @@ void Error_2_member_expr_without_value(void) {
     });
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, "Position(x:y:)", NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, "Position(x:y:)", &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1054,7 +1278,11 @@ void Error_expr_junk_after_number(void) {
     });
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, "Position(0abc)", NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, "Position(0abc)", &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1073,7 +1301,11 @@ void Error_expr_junk_after_unary_minus(void) {
     });
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, "Position(-abc)", NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, "Position(-abc)", &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1092,7 +1324,11 @@ void Error_expr_comma_after_nothing(void) {
     });
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, "Position(,)", NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, "Position(,)", &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1111,7 +1347,11 @@ void Error_expr_digit_with_two_dots(void) {
     });
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, "Position(10.10.10)", NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, "Position(10.10.10)", &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1142,7 +1382,11 @@ void Error_template_unresolved_tag(void) {
     LINE "Tree ent()";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1161,7 +1405,11 @@ void Error_template_unresolved_component(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 7);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1177,7 +1425,11 @@ void Error_template_unresolved_pair_relationship(void) {
     LINE "Tree ent()";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1193,7 +1445,11 @@ void Error_template_unresolved_pair_target(void) {
     LINE "Tree ent()";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1209,7 +1465,11 @@ void Error_template_unresolved_with_tag(void) {
     LINE "Tree ent()";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1229,7 +1489,11 @@ void Error_template_unresolved_with_component(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 7);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1246,7 +1510,11 @@ void Error_template_unresolved_with_pair_relationship(void) {
     LINE "Tree ent()";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1263,7 +1531,11 @@ void Error_template_unresolved_with_pair_target(void) {
     LINE "Tree ent()";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1280,7 +1552,11 @@ void Error_template_unresolved_tag_in_child(void) {
     LINE "Tree ent()";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1304,7 +1580,11 @@ void Error_template_prop_no_type(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1331,7 +1611,11 @@ void Error_template_w_composite_prop_invalid_assignment(void) {
     LINE "t { Tree: {pos: {20, 30}} }";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1349,7 +1633,11 @@ void Error_template_redeclare_prop_as_const(void) {
     LINE "\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 8);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1367,7 +1655,11 @@ void Error_template_redeclare_prop_as_prop(void) {
     LINE "\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 8);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1385,7 +1677,11 @@ void Error_template_redeclare_const_as_const(void) {
     LINE "\n";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 8);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1503,7 +1799,11 @@ void Error_template_in_template(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1624,7 +1924,11 @@ void Error_template_w_invalid_var_in_expr(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 4);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1673,7 +1977,11 @@ void Error_script_initializer_w_int_to_struct(void) {
     LINE "}";
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1689,6 +1997,7 @@ void Error_capture_error(void) {
     ecs_script_t *script = ecs_script_parse(world, "foo", expr, NULL, &result);
     test_assert(script == NULL);
     test_assert(result.error != NULL);
+    test_int(result.line, 2);
     ecs_os_free(result.error);
 
     ecs_fini(world);
@@ -1704,7 +2013,11 @@ void Error_unresolved_component_error_w_script_run(void) {
 
     ecs_log_set_level(-4);
 
-    test_assert(ecs_script_run(world, NULL, expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1777,6 +2090,7 @@ void Error_unresolved_component_error_w_script_eval(void) {
     int r = ecs_script_eval(script, NULL, &result);
     test_assert(r != 0);
     test_assert(result.error != NULL);
+    test_int(result.line, 2);
     ecs_os_free(result.error);
 
     ecs_script_free(script);
@@ -1800,12 +2114,14 @@ void Error_unresolved_component_error_w_script_eval_multiple_times(void) {
     int r = ecs_script_eval(script, NULL, &result);
     test_assert(r != 0);
     test_assert(result.error != NULL);
+    test_int(result.line, 2);
 
     ecs_os_free(result.error);
 
     r = ecs_script_eval(script, NULL, &result);
     test_assert(r != 0);
     test_assert(result.error != NULL);
+    test_int(result.line, 2);
 
     ecs_os_free(result.error);
     ecs_script_free(script);
@@ -1821,7 +2137,11 @@ void Error_annotation_without_newline(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, "foo", expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, "foo", expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1835,7 +2155,11 @@ void Error_annotation_without_entity(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, "foo", expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, "foo", expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1850,7 +2174,11 @@ void Error_annotation_to_unresolved_identifier(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, "foo", expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, "foo", expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
 
     ecs_fini(world);
 }
@@ -1863,6 +2191,7 @@ void Error_annotation_to_unresolved_identifier_managed_parse_twice(void) {
     LINE "Foo"
     ;
 
+    ecs_log_set_level(-4);
     ecs_entity_t s = ecs_script(world, {
         .code = expr
     });
@@ -1888,6 +2217,7 @@ void Error_annotation_to_unresolved_identifier_managed_parse_twice_2(void) {
 
     ecs_entity_t s = ecs_new(world);
 
+    ecs_log_set_level(-4);
     ecs_script(world, {
         .entity = s,
         .code = expr
@@ -1918,7 +2248,490 @@ void Error_annotation_to_tag(void) {
     ;
 
     ecs_log_set_level(-4);
-    test_assert(ecs_script_run(world, "foo", expr, NULL) != 0);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, "foo", expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    ecs_os_free(result.error);
 
+    ecs_fini(world);
+}
+
+void Error_invalid_hex_number_prefix(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "const v: 0x";
+
+    ecs_log_set_level(-4);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_invalid_binary_number_prefix(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "const v: 0b";
+
+    ecs_log_set_level(-4);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_unterminated_multiline_string_capture_error(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "const v: `unterminated";
+
+    ecs_script_eval_result_t result = {0};
+    ecs_script_t *script = ecs_script_parse(world, "foo", expr, NULL, &result);
+
+    test_assert(script == NULL);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    if (result.error) {
+        ecs_os_free(result.error);
+    }
+
+    ecs_fini(world);
+}
+
+void Error_invalid_char_literal_two_chars(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "const c: 'ab'";
+
+    ecs_log_set_level(-4);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_match_operator_without_equals_capture_error(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "B~";
+
+    ecs_script_eval_result_t result = {0};
+    ecs_script_t *script = ecs_script_parse(world, "foo", expr, NULL, &result);
+
+    test_assert(script == NULL);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    if (result.error) {
+        ecs_os_free(result.error);
+    }
+
+    ecs_fini(world);
+}
+
+void Error_eval_root_var_component_capture_error(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "$x";
+
+    ecs_script_eval_result_t parse_result = {0};
+    ecs_script_t *script = ecs_script_parse(
+        world, "foo", expr, NULL, &parse_result);
+
+    test_assert(script != NULL);
+    test_assert(parse_result.error == NULL);
+
+    ecs_script_eval_result_t eval_result = {0};
+    int rc = ecs_script_eval(script, NULL, &eval_result);
+    test_assert(rc != 0);
+    test_assert(eval_result.error != NULL);
+    test_int(eval_result.line, 1);
+
+    if (eval_result.error) {
+        ecs_os_free(eval_result.error);
+    }
+    ecs_script_free(script);
+
+    ecs_fini(world);
+}
+
+void Error_string_tag_with_gt_capture_error(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "\">\"";
+
+    ecs_script_eval_result_t parse_result = {0};
+    ecs_script_t *script = ecs_script_parse(
+        world, "foo", expr, NULL, &parse_result);
+
+    test_assert(script != NULL);
+    test_assert(parse_result.error == NULL);
+
+    ecs_script_eval_result_t eval_result = {0};
+    int rc = ecs_script_eval(script, NULL, &eval_result);
+    test_assert(rc != 0);
+    test_assert(eval_result.error != NULL);
+    test_int(eval_result.line, 1);
+
+    if (eval_result.error) {
+        ecs_os_free(eval_result.error);
+    }
+    ecs_script_free(script);
+
+    ecs_fini(world);
+}
+
+static int log_error_count = 0;
+static int log_error_level = 0;
+
+static
+void log_error_count_callback(
+    int32_t level,
+    const char *file,
+    int32_t line,
+    const char *msg)
+{
+    (void)file;
+    (void)line;
+    (void)msg;
+    if (level <= -3) {
+        log_error_count ++;
+        log_error_level = level;
+    }
+}
+
+void Error_parse_error_logged(void) {
+    ecs_os_set_api_defaults();
+    ecs_os_api_t os_api = ecs_os_api;
+    os_api.log_ = log_error_count_callback;
+    ecs_os_set_api(&os_api);
+    ecs_log_set_level(-2);
+
+    log_error_count = 0;
+    log_error_level = 0;
+
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Parent {"
+    LINE " Child {";
+
+    ecs_entity_t s = ecs_script(world, {
+        .code = expr
+    });
+    test_assert(s != 0);
+
+    const EcsScript *script = ecs_get(world, s, EcsScript);
+    test_assert(script != NULL);
+    test_assert(script->error != NULL);
+
+    test_assert(log_error_count > 0);
+    test_int(log_error_level, -3);
+
+    ecs_fini(world);
+}
+
+void Error_eval_error_logged(void) {
+    ecs_os_set_api_defaults();
+    ecs_os_api_t os_api = ecs_os_api;
+    os_api.log_ = log_error_count_callback;
+    ecs_os_set_api(&os_api);
+    ecs_log_set_level(-2);
+
+    log_error_count = 0;
+    log_error_level = 0;
+
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "e {"
+    LINE " Foo: {}"
+    LINE "}";
+
+    ecs_entity_t s = ecs_script(world, {
+        .code = expr
+    });
+    test_assert(s != 0);
+
+    const EcsScript *script = ecs_get(world, s, EcsScript);
+    test_assert(script != NULL);
+    test_assert(script->error != NULL);
+
+    test_assert(log_error_count > 0);
+    test_int(log_error_level, -3);
+
+    ecs_fini(world);
+}
+
+void Error_template_unresolved_var_in_entity_name(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "template Foo {"
+    LINE "  \"child_$suffix\" {}"
+    LINE "}"
+    LINE "ent { Foo: {} }";
+
+    ecs_log_set_level(-4);
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_parse_error_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}"
+    LINE "Bar {}"
+    LINE "Hello [ }";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    test_int(result.column, 7);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_parse_error_first_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo { Position: }";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 1);
+    test_int(result.column, 17);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_eval_error_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}"
+    LINE "Bar {}"
+    LINE "Hello { UnresolvedComponent: {x: 10} }";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 3);
+    test_int(result.column, 9);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_eval_error_line_column_after_blank_lines(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}"
+    LINE ""
+    LINE ""
+    LINE "// comment"
+    LINE ""
+    LINE "UnresolvedTag";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 6);
+    test_int(result.column, 1);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_eval_error_line_column_after_multiline_string(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "const s = `line1"
+    LINE "line2"
+    LINE "line3`"
+    LINE "Foo {}"
+    LINE "UnresolvedTag";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 5);
+    test_int(result.column, 1);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_interpolated_expr_error_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}"
+    LINE "const x = \"hello {does_not_exist}\""
+    LINE "Bar {}";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    test_int(result.column, 11);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_interpolated_var_error_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}"
+    LINE "const x = \"hello $does_not_exist\""
+    LINE "Bar {}";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    test_int(result.column, 11);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_interpolated_parse_error_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}"
+    LINE "const x = \"hello {10 +}\""
+    LINE "Bar {}";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    test_int(result.column, 11);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_template_eval_error_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "template Tmpl {"
+    LINE "  child { UnresolvedComponent: {x: 1} }"
+    LINE "}"
+    LINE "e { Tmpl: {} }";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    test_int(result.column, 11);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_expr_error_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}"
+    LINE "const x = 10 + \"abc\"";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    test_int(result.column, 11);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_no_error_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}";
+
+    ecs_script_eval_result_t result = {0};
+    test_assert(ecs_script_run(world, NULL, expr, &result) == 0);
+    test_assert(result.error == NULL);
+    test_int(result.line, 0);
+    test_int(result.column, 0);
+
+    ecs_fini(world);
+}
+
+void Error_script_parse_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}"
+    LINE "Bar [ }";
+
+    ecs_script_eval_result_t result = {0};
+    ecs_script_t *script = ecs_script_parse(world, NULL, expr, NULL, &result);
+    test_assert(script == NULL);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    test_int(result.column, 5);
+    ecs_os_free(result.error);
+
+    ecs_fini(world);
+}
+
+void Error_script_eval_line_column(void) {
+    ecs_world_t *world = ecs_init();
+
+    const char *expr =
+    HEAD "Foo {}"
+    LINE "Bar { UnresolvedComponent: {x: 10} }";
+
+    ecs_script_eval_result_t result = {0};
+    ecs_script_t *script = ecs_script_parse(world, NULL, expr, NULL, &result);
+    test_assert(script != NULL);
+    test_assert(result.error == NULL);
+
+    test_assert(ecs_script_eval(script, NULL, &result) != 0);
+    test_assert(result.error != NULL);
+    test_int(result.line, 2);
+    test_int(result.column, 7);
+    ecs_os_free(result.error);
+
+    ecs_script_free(script);
     ecs_fini(world);
 }

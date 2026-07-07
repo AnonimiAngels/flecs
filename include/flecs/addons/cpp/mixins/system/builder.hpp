@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include "../../utils/function_traits.hpp"
 #include "../../utils/node_builder.hpp"
 #include "builder_i.hpp"
 
@@ -28,13 +29,19 @@ struct system_builder final : _::system_builder_base<Components...> {
         _::sig<Components...>(world).populate(this);
 
 #ifdef FLECS_PIPELINE
-        ecs_add_id(world, this->desc_.entity, ecs_dependson(flecs::OnUpdate));
-        ecs_add_id(world, this->desc_.entity, flecs::OnUpdate);
+        this->desc_.phase = flecs::OnUpdate;
 #endif
     }
 
     template <typename Func>
     system each(Func&& func);
+
+private:
+    template <typename ... CallbackComponents, typename Func>
+    system each_callback(_::arg_list<CallbackComponents...>, Func&& func);
+
+    template <typename ... CallbackComponents>
+    void prepend_each_callback_signature();
 };
 
 }

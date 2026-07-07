@@ -36,7 +36,8 @@
         .name = script_name,\
         .code = expr,\
         .pos = expr,\
-        .token_cur = tokens\
+        .token_cur = tokens,\
+        .token_end = &(tokens)[tokens_len]\
     }
 
 /* Definitions for parser functions */
@@ -64,13 +65,13 @@
 /* Error */
 #define Error(...)\
     ecs_parser_error(parser->name, parser->code,\
-        (pos - parser->code) - 1, __VA_ARGS__);\
+        flecs_parser_errpos(parser, pos - 1), __VA_ARGS__);\
     goto error
 
 /* Warning */
 #define Warning(...)\
     ecs_parser_warning(parser->name, parser->code,\
-        (pos - parser->code) - 1, __VA_ARGS__);\
+        flecs_parser_errpos(parser, pos - 1), __VA_ARGS__);\
 
 /* Parse expression */
 #define Expr(until, ...)\
@@ -220,6 +221,16 @@
             parser->token_cur = parser->token_keep;\
         }\
     } else {\
+        if (flecs_token(parser, pos, &lookahead_token, false)) {\
+            if (lookahead_token.value) {\
+                Error("unexpected %s'%s'", \
+                    flecs_token_kind_str(lookahead_token.kind), \
+                    lookahead_token.value);\
+            } else {\
+                Error("unexpected %s", \
+                    flecs_token_kind_str(lookahead_token.kind));\
+            }\
+        }\
         goto error;\
     }
 

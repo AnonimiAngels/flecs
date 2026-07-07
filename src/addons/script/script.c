@@ -12,6 +12,7 @@ ECS_COMPONENT_DECLARE(EcsScript);
 ECS_COMPONENT_DECLARE(EcsScriptConstVar);
 ECS_COMPONENT_DECLARE(EcsScriptFunction);
 ECS_COMPONENT_DECLARE(EcsScriptMethod);
+ECS_DECLARE(EcsScriptVectorType);
 
 static
 ECS_MOVE(EcsScript, dst, src, {
@@ -84,17 +85,29 @@ void ecs_script_clear(
     if (!instance) {
         ecs_delete_with(world, ecs_pair_t(EcsScript, script));
     } else {
+        ecs_assert(ecs_is_alive(world, instance), ECS_INTERNAL_ERROR, NULL);
         ecs_vec_t to_delete = {0};
         ecs_vec_init_t(&world->allocator, &to_delete, ecs_entity_t, 0);
 
         ecs_iter_t it = ecs_children(world, instance);
         while (ecs_children_next(&it)) {
-            if (ecs_table_has_id(world, it.table, ecs_pair(EcsScriptTemplate, script))) {
+            if (it.table) {
+                if (ecs_table_has_id(world, it.table, ecs_pair(EcsScriptTemplate, script))) {
+                    int32_t i, count = it.count;
+                    for (i = 0; i < count; i ++) {
+                        ecs_vec_append_t(
+                            &world->allocator, &to_delete, ecs_entity_t)[0] = 
+                                it.entities[i];
+                    }
+                }
+            } else {
                 int32_t i, count = it.count;
                 for (i = 0; i < count; i ++) {
-                    ecs_vec_append_t(
-                        &world->allocator, &to_delete, ecs_entity_t)[0] = 
-                            it.entities[i];
+                    ecs_entity_t e = it.entities[i];
+                    if (ecs_has_pair(world, e, EcsScriptTemplate, script)) {
+                        ecs_vec_append_t(
+                            &world->allocator, &to_delete, ecs_entity_t)[0] = e;
+                    }
                 }
             }
         }
@@ -204,11 +217,12 @@ int ecs_script_update(
         ecs_script_free(s->script);
     }
 
-    ecs_script_eval_result_t eval_result = {NULL};
+    ecs_script_eval_result_t eval_result = {0};
 
     s->script = ecs_script_parse(world, name, code, NULL, &eval_result);
     if (s->script == NULL) {
         s->error = eval_result.error;
+        ecs_log_(-3, NULL, 0, "%s: %s", name ? name : "script", s->error);
         return -1;
     }
 
@@ -224,11 +238,21 @@ int ecs_script_update(
 
     ecs_script_clear(world, e, instance);
 
+#ifdef FLECS_DEBUG
+    {
+        ecs_iter_t it = ecs_each_pair_t(world, EcsScript, e);
+        ecs_assert(!ecs_iter_is_true(&it), ECS_INTERNAL_ERROR, NULL);
+    }
+#endif
+
     ecs_entity_t prev = ecs_set_with(world, flecs_script_tag(e, instance));
 
-    if (ecs_script_eval(s->script, NULL, &eval_result)) {
+    ecs_script_t *parsed = s->script;
+    if (ecs_script_eval(parsed, NULL, &eval_result)) {
+        s = ecs_ensure(world, e, EcsScript);
         s->error = eval_result.error;
-        ecs_script_free(s->script);
+        ecs_log_(-3, NULL, 0, "%s: %s", name ? name : "script", s->error);
+        ecs_script_free(parsed);
         s->script = NULL;
         ecs_delete_with(world, ecs_pair_t(EcsScript, e));
         result = -1;
@@ -327,6 +351,7 @@ void ecs_script_runtime_clear(
     ecs_vec_clear(&r->with);
     ecs_vec_clear(&r->with_type_info);
     ecs_vec_clear(&r->using);
+    r->error = false;
 }
 
 ecs_script_runtime_t* flecs_script_runtime_get(
@@ -377,16 +402,15 @@ int EcsScript_serialize(
 void FlecsScriptImport(
     ecs_world_t *world)
 {
+    ecs_assert(FLECS_SCRIPT_VECTOR_FUNCTION_COUNT == EcsPrimitiveKindLast,
+        ECS_INTERNAL_ERROR, NULL);
+
     ECS_MODULE(world, FlecsScript);
     ECS_IMPORT(world, FlecsMeta);
-#ifdef FLECS_DOC
-    ECS_IMPORT(world, FlecsDoc);
-    ecs_doc_set_brief(world, ecs_id(FlecsScript), 
-        "Module with components for managing Flecs scripts");
-#endif
 
     ecs_set_name_prefix(world, "Ecs");
     ECS_COMPONENT_DEFINE(world, EcsScript);
+    ECS_TAG_DEFINE(world, EcsScriptVectorType);
 
     ecs_set_hooks(world, EcsScript, {
         .ctor = flecs_default_ctor,
@@ -398,7 +422,7 @@ void FlecsScriptImport(
     ECS_COMPONENT(world, ecs_script_t);
 
     ecs_entity_t opaque_view = ecs_struct(world, {
-        .entity = ecs_entity(world, { .name = "ecs_script_view_t"}),
+        .entity = ecs_entity(world, { .name = "ecs_script_view_t" }),
         .members = {
             { .name = "filename", .type = ecs_id(ecs_string_t) },
             { .name = "code", .type = ecs_id(ecs_string_t) },
@@ -414,7 +438,6 @@ void FlecsScriptImport(
     });
 
     ecs_add_id(world, ecs_id(EcsScript), EcsPairIsTag);
-    ecs_add_id(world, ecs_id(EcsScript), EcsPrivate);
     ecs_add_pair(world, ecs_id(EcsScript), EcsOnInstantiate, EcsDontInherit);
 
     flecs_script_template_import(world);

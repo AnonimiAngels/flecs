@@ -31,11 +31,11 @@ uint64_t flecs_ito_(
     v.u = u;
 
     if (is_signed) {
-        ecs_assert(v.s >= flecs_s_min[size], ECS_INVALID_CONVERSION, err);
-        ecs_assert(v.s <= flecs_s_max[size], ECS_INVALID_CONVERSION, err);
+        ecs_assert(v.s >= flecs_s_min[size], ECS_INVALID_CONVERSION, "%s", err);
+        ecs_assert(v.s <= flecs_s_max[size], ECS_INVALID_CONVERSION, "%s", err);
     } else {
-        ecs_assert(lt_zero == false, ECS_INVALID_CONVERSION, err);
-        ecs_assert(u <= flecs_u_max[size], ECS_INVALID_CONVERSION, err);
+        ecs_assert(lt_zero == false, ECS_INVALID_CONVERSION, "%s", err);
+        ecs_assert(u <= flecs_u_max[size], ECS_INVALID_CONVERSION, "%s", err);
     }
 
     return u;
@@ -215,7 +215,7 @@ char* flecs_load_from_file(
     size_t size;
 
     /* Open file for reading */
-    ecs_os_fopen(&file, filename, "r");
+    file = ecs_os_fopen(filename, "r");
     if (!file) {
         ecs_err("%s (%s)", ecs_os_strerror(errno), filename);
         goto error;
@@ -241,12 +241,12 @@ char* flecs_load_from_file(
         content[size] = '\0';
     }
 
-    fclose(file);
+    ecs_os_fclose(file);
 
     return content;
 error:
     if (file) {
-        fclose(file);
+        ecs_os_fclose(file);
     }
     ecs_os_free(content);
     return NULL;
@@ -422,9 +422,17 @@ char* flecs_astresc(
     return out;
 }
 
+static
+bool flecs_parse_is_e(
+    char e)
+{
+    return e == 'e' || e == 'E';
+}
+
 const char* flecs_parse_digit(
     const char *ptr,
-    char *token)
+    char *token,
+    int32_t token_size)
 {
     char *tptr = token;
     char ch = ptr[0];
@@ -439,8 +447,15 @@ const char* flecs_parse_digit(
     ptr ++;
 
     for (; (ch = *ptr); ptr ++) {
-        if (!isdigit(ch) && (ch != '.') && (ch != 'e')) {
-            break;
+        if (!isdigit(ch) && (ch != '.') && !flecs_parse_is_e(ch)) {
+            if (ch != '-' || !flecs_parse_is_e(ptr[-1])) {
+                break;
+            }
+        }
+
+        if ((tptr - token) >= (token_size - 1)) {
+            ecs_parser_error(NULL, NULL, 0, "number too long");
+            return NULL;
         }
 
         tptr[0] = ch;
@@ -448,7 +463,7 @@ const char* flecs_parse_digit(
     }
 
     tptr[0] = '\0';
-    
+
     return ptr;
 }
 
@@ -462,7 +477,7 @@ const char* flecs_parse_ws_eol(
     return ptr;
 }
 
-#define FLECS_ERRSTR_MAX (64)
+#define FLECS_ERRSTR_MAX (256)
 static char flecs_errstr_buf[FLECS_ERRSTR_MAX];
 static char flecs_errstr_buf_1[FLECS_ERRSTR_MAX];
 static char flecs_errstr_buf_2[FLECS_ERRSTR_MAX];

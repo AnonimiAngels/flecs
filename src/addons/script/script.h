@@ -29,7 +29,11 @@ struct ecs_script_impl_t {
 
 typedef struct ecs_function_calldata_t {
     ecs_entity_t function;
-    ecs_function_callback_t callback;
+    struct {
+        ecs_function_callback_t callback;
+        ecs_vector_function_callback_t vector_callback;
+    } is;
+    int32_t vector_elem_count;
     void *ctx;
 } ecs_function_calldata_t;
 
@@ -47,6 +51,8 @@ struct ecs_script_runtime_t {
     ecs_vec_t with;
     ecs_vec_t with_type_info;
     ecs_vec_t annot;
+
+    bool error;
 };
 
 ecs_script_t* flecs_script_new(
@@ -76,10 +82,6 @@ void flecs_script_register_builtin_functions(
 void flecs_function_import(
     ecs_world_t *world);
 
-int flecs_script_check(
-    const ecs_script_t *script,
-    const ecs_script_eval_desc_t *desc);
-
 const char* flecs_script_stmt(
     ecs_parser_t *parser,
     const char *pos);
@@ -93,6 +95,38 @@ int ecs_script_ast_node_to_buf(
 
 void ecs_script_runtime_clear(
     ecs_script_runtime_t *r);
+
+int flecs_script_apply_annot(
+    ecs_script_eval_visitor_t *v,
+    ecs_script_entity_t *node,
+    ecs_script_annot_t *annot);
+
+/* Script functions */
+double flecs_lerp(
+    double a,
+    double b,
+    double t);
+
+typedef struct ecs_script_user_function_t {
+    ecs_script_t *script;
+    ecs_script_function_node_t *node;
+} ecs_script_user_function_t;
+
+void flecs_script_user_function_callback(
+    const ecs_function_ctx_t *ctx,
+    int32_t argc,
+    const ecs_value_t *argv,
+    ecs_value_t *result);
+
+void flecs_script_user_function_ctx_free(
+    void *ctx);
+
+int flecs_script_eval_function(
+    ecs_script_eval_visitor_t *v,
+    ecs_script_function_node_t *node);
+
+void FlecsScriptMathPerlinImport(
+    ecs_world_t *world);
 
 #endif // FLECS_SCRIPT
 #endif // FLECS_SCRIPT_PRIVATE_H

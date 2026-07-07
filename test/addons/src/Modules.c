@@ -427,3 +427,43 @@ void Modules_component_parent_becomes_module(void) {
 
     ecs_fini(world);
 }
+
+static int singleton_test_imported = 0;
+
+static
+void SingletonTestImport(ecs_world_t *world) {
+    ECS_MODULE(world, SingletonTest);
+
+    test_assert(ecs_has_id(world, ecs_id(SingletonTest), EcsSingleton));
+
+    singleton_test_imported ++;
+}
+
+void Modules_module_has_singleton(void) {
+    ecs_world_t *world = ecs_init();
+
+    test_int(singleton_test_imported, 0);
+
+    ecs_entity_t ecs_id(SingletonTest) = ECS_IMPORT(world, SingletonTest);
+
+    test_int(singleton_test_imported, 1);
+
+    test_assert(ecs_has_id(world, ecs_id(SingletonTest), EcsSingleton));
+
+    ecs_fini(world);
+}
+
+static
+void PhysicsPluginImport(ecs_world_t *world) {
+    ECS_MODULE(world, PhysicsPlugin);
+}
+
+void Modules_import_w_uppercase_name(void) {
+    ecs_world_t *world = ecs_init();
+
+    ecs_entity_t e = ecs_import(world, PhysicsPluginImport, "PhysicsPlugin");
+    test_assert(e != 0);
+    test_assert(e == ecs_lookup(world, "physics.plugin"));
+
+    ecs_fini(world);
+}

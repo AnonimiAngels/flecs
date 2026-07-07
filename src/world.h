@@ -12,10 +12,8 @@
 /* The number of table versions to split tables across */
 #define ECS_TABLE_VERSION_ARRAY_SIZE (ECS_TABLE_VERSION_ARRAY_BITMASK + 1)
 
-/* World level allocators are for operations that are not multithreaded */
+/* World-level allocators are for operations that are not multithreaded */
 typedef struct ecs_world_allocators_t {
-    ecs_map_params_t ptr;
-    ecs_map_params_t query_table_list;
     ecs_block_allocator_t graph_edge_lo;
     ecs_block_allocator_t graph_edge;
     ecs_block_allocator_t component_record;
@@ -25,6 +23,9 @@ typedef struct ecs_world_allocators_t {
 
     /* Temporary vectors used for creating table diff id sequences */
     ecs_table_diff_builder_t diff_builder;
+
+    /* Temporary vector for tree spawner */
+    ecs_vec_t tree_spawner;
 } ecs_world_allocators_t;
 
 /* Component monitor */
@@ -67,7 +68,7 @@ typedef struct ecs_store_t {
     ecs_vec_t marked_ids;            /* vector<ecs_marked_id_t> */
 
     /* Components deleted during cleanup action. Used to delay cleaning up of
-     * type info so it's guaranteed that this data is available while the 
+     * type info so it's guaranteed that this data is available while the
      * storage is cleaning up tables. */
     ecs_vec_t deleted_components;    /* vector<ecs_entity_t> */
 } ecs_store_t;
@@ -90,6 +91,16 @@ struct ecs_world_t {
     ecs_map_t id_index_hi;           /* map<id, ecs_component_record_t*> */
     ecs_map_t type_info;             /* map<type_id, type_info_t> */
 
+#ifdef FLECS_DEBUG
+    /* Locked components. When a component is queried for, it is no longer 
+     * possible to change traits and/or to delete the component. */
+    ecs_map_t locked_components;     /* map<id_t, int32_t> */
+
+    /* Locked entities. This is used for pair targets used in queries. It is
+     * possible to add traits, but entities cannot be deleted. */
+    ecs_map_t locked_entities;     /* map<id_t, int32_t> */
+#endif
+
     /* -- Cached handle to id records -- */
     ecs_component_record_t *cr_wildcard;
     ecs_component_record_t *cr_wildcard_wildcard;
@@ -102,6 +113,10 @@ struct ecs_world_t {
     /* Head of list that points to all non-fragmenting component ids */
     ecs_component_record_t *cr_non_fragmenting_head;
 
+    int32_t cr_flag_count;
+
+    int32_t non_fragmenting_child_count;
+
     /* -- Mixins -- */
     ecs_world_t *self;
     ecs_observable_t observable;
@@ -113,18 +128,11 @@ struct ecs_world_t {
      * cached pointer is still valid. */
     uint32_t table_version[ECS_TABLE_VERSION_ARRAY_SIZE];
 
-    /* Same as table_version, but only increases after the column pointers of
-     * a table change. */
-    uint32_t table_column_version[ECS_TABLE_VERSION_ARRAY_SIZE];
-
     /* Array for checking if components can be looked up trivially */
     ecs_flags8_t non_trivial_lookup[FLECS_HI_COMPONENT_ID];
 
     /* Array for checking if components can be set trivially */
     ecs_flags8_t non_trivial_set[FLECS_HI_COMPONENT_ID];
-
-    /* Is entity range checking enabled? */
-    bool range_check_enabled;
 
     /* --  Data storage -- */
     ecs_store_t store;
@@ -146,9 +154,12 @@ struct ecs_world_t {
     /* -- Component ids -- */
     ecs_vec_t component_ids;         /* World local component ids */
 
+    /* Index of prefab children in ordered children vector. Used by ecs_get_target. */
+    ecs_map_t prefab_child_indices;
+
     /* Internal callback for command inspection. Only one callback can be set at
-     * a time. After assignment the action will become active at the start of 
-     * the next frame, set by ecs_frame_begin, and will be reset by 
+     * a time. After assignment, the action will become active at the start of
+     * the next frame, set by ecs_frame_begin, and will be reset by
      * ecs_frame_end. */
     ecs_on_commands_action_t on_commands;
     ecs_on_commands_action_t on_commands_active;
@@ -164,7 +175,7 @@ struct ecs_world_t {
     ecs_pipeline_state_t* pq;        /* Pointer to the pipeline for the workers to execute */
     bool workers_use_task_api;       /* Workers are short-lived tasks, not long-running threads */
 
-    /* -- Exclusive access */
+    /* -- Exclusive access -- */
     ecs_os_thread_id_t exclusive_access; /* If set, world can only be mutated by thread */
     const char *exclusive_thread_name;   /* Name of thread with exclusive access (used for debugging) */
 
@@ -206,17 +217,12 @@ ecs_stage_t* flecs_stage_from_world(
 ecs_stage_t* flecs_stage_from_readonly_world(
     const ecs_world_t *world);
 
-/* Get component callbacks. */
-const ecs_type_info_t *flecs_type_info_get(
-    const ecs_world_t *world,
-    ecs_entity_t component);
-
 /* Get or create component callbacks. */
 ecs_type_info_t* flecs_type_info_ensure(
     ecs_world_t *world,
     ecs_entity_t component);
 
-/* Initialize type info for builtin components. */
+/* Initialize type info for component. */
 bool flecs_type_info_init_id(
     ecs_world_t *world,
     ecs_entity_t component,
@@ -267,18 +273,8 @@ void flecs_increment_table_version(
     ecs_world_t *world,
     ecs_table_t *table);
 
-/* Same as flecs_increment_table_version, but for column version. */
-void flecs_increment_table_column_version(
-    ecs_world_t *world,
-    ecs_table_t *table);
-
 /* Get table version. */
 uint32_t flecs_get_table_version_fast(
-    const ecs_world_t *world,
-    const uint64_t table_id);
-
-/* Get table version for column pointer validation. */
-uint32_t flecs_get_table_column_version(
     const ecs_world_t *world,
     const uint64_t table_id);
 
@@ -287,7 +283,31 @@ void flecs_throw_invalid_delete(
     ecs_world_t *world,
     ecs_id_t id);
 
-/* Convenience macro's for world allocator */
+#ifdef FLECS_DEBUG
+void flecs_component_lock(
+    ecs_world_t *world,
+    ecs_id_t component);
+
+void flecs_component_unlock(
+    ecs_world_t *world,
+    ecs_id_t component);
+
+bool flecs_component_is_trait_locked(
+    ecs_world_t *world,
+    ecs_id_t component);
+
+bool flecs_component_is_delete_locked(
+    ecs_world_t *world,
+    ecs_id_t component);
+
+#else
+#define flecs_component_lock(world, component) (void)world; (void)component
+#define flecs_component_unlock(world, component) (void)world; (void)component
+#define flecs_component_is_trait_locked(world, component) (false)
+#define flecs_component_is_delete_locked(world, component) (false)
+#endif
+
+/* Convenience macros for world allocator */
 #define flecs_walloc(world, size)\
     flecs_alloc(&world->allocator, size)
 #define flecs_walloc_t(world, T)\
@@ -312,5 +332,39 @@ void flecs_throw_invalid_delete(
     flecs_dup(&world->allocator, size, ptr)
 #define flecs_wdup_n(world, T, count, ptr)\
     flecs_dup_n(&world->allocator, T, count, ptr)
+
+/* Convenience macro that iterates over all component records in the world */
+#define FLECS_EACH_COMPONENT_RECORD(cr, ...)\
+    for (int32_t _i = 0; _i < FLECS_HI_ID_RECORD_ID; _i++) {\
+        ecs_component_record_t *cr = world->id_index_lo[_i];\
+        if (cr) {\
+            __VA_ARGS__\
+        }\
+    }\
+    {\
+        ecs_map_iter_t _it = ecs_map_iter(&world->id_index_hi);\
+        while (ecs_map_next(&_it)) {\
+            ecs_component_record_t *cr = ecs_map_ptr(&_it);\
+            __VA_ARGS__\
+        }\
+    }
+
+/* Convenience macro that iterates over all queries in the world */
+#define FLECS_EACH_QUERY(query, ...)\
+    {\
+        ecs_iter_t _it = ecs_each_pair(world, ecs_id(EcsPoly), EcsQuery);\
+        while (ecs_each_next(&_it)) {\
+            EcsPoly *queries = ecs_field(&_it, EcsPoly, 0);\
+            for (int32_t _i = 0; _i < _it.count; _i++) {\
+                ecs_query_t *query = queries[_i].poly;\
+                if (!query) {\
+                    continue;\
+                }\
+                flecs_poly_assert(query, ecs_query_t);\
+                ecs_assert(query->entity != 0, ECS_INTERNAL_ERROR, NULL);\
+                __VA_ARGS__\
+            }\
+        }\
+    }
 
 #endif

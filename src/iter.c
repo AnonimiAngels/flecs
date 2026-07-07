@@ -51,12 +51,25 @@ void flecs_iter_init(
         ecs_assert(it->ids == NULL, ECS_INTERNAL_ERROR, NULL);
         ecs_assert(it->sources == NULL, ECS_INTERNAL_ERROR, NULL);
         ecs_assert(it->trs == NULL, ECS_INTERNAL_ERROR, NULL);
+        ecs_assert(it->columns == NULL, ECS_INTERNAL_ERROR, NULL);
 
-        it->ids = flecs_stack_calloc_n(stack, ecs_id_t, it->field_count);
-        it->sources = flecs_stack_calloc_n(
-            stack, ecs_entity_t, it->field_count);
-        it->trs = flecs_stack_calloc_n(
-            stack, ecs_table_record_t*, it->field_count);
+        int32_t fc = it->field_count;
+        ecs_size_t wide = (ecs_size_t)(sizeof(ecs_id_t) + sizeof(ecs_entity_t) +
+            sizeof(ecs_table_record_t*)) * fc;
+        ecs_size_t cols = (ecs_size_t)sizeof(int16_t) * fc;
+        char *buf = flecs_stack_alloc(stack, wide + cols,
+            ECS_ALIGNOF(ecs_id_t));
+
+        it->ids = (ecs_id_t*)(void*)buf;
+        it->sources = (ecs_entity_t*)(void*)(buf +
+            (ecs_size_t)sizeof(ecs_id_t) * fc);
+        it->trs = (const ecs_table_record_t**)(void*)(buf +
+            (ecs_size_t)(sizeof(ecs_id_t) + sizeof(ecs_entity_t)) * fc);
+        int16_t *columns = (int16_t*)(void*)(buf + wide);
+
+        ecs_os_memset(buf, 0, wide);
+        ecs_os_memset(columns, 0xFF, cols);
+        it->columns = columns;
     }
 }
 
@@ -105,68 +118,93 @@ void* ecs_field_w_size(
         "missing size for field %d", index);
     ecs_check(ecs_field_size(it, index) == size || 
         !ecs_field_size(it, index),
-            ECS_INVALID_PARAMETER, "mismatching size for field %d", index);
+            ECS_INVALID_PARAMETER, 
+            "mismatching size for field %d (expected '%s')", 
+            index,
+            flecs_errstr(ecs_id_str(it->world, it->ids[index])));
     (void)size;
 
-    if (it->ptrs && !it->offset) {
-        void *ptr = it->ptrs[index];
-        if (ptr) {
-#ifdef FLECS_DEBUG
-            if (it->trs[index]) {
-                /* Make sure that address in ptrs array is the same as what this 
-                * function would have returned if no ptrs array was set. */
-                void **temp_ptrs = it->ptrs;
-                ECS_CONST_CAST(ecs_iter_t*, it)->ptrs = NULL;
-                ecs_assert(ptr == ecs_field_w_size(it, size, index), 
-                    ECS_INTERNAL_ERROR, NULL);
-                ECS_CONST_CAST(ecs_iter_t*, it)->ptrs = temp_ptrs;
-            } else {
-                /* We're just passing in a pointer to a value that may not be
-                 * a component on the entity (such as a pointer to a new value
-                 * in an on_replace hook). */
-            }
-#endif
-            return ptr;
-        }
+    if (it->ptrs) {
+        return it->ptrs[index];
     }
 
-    const ecs_table_record_t *tr = it->trs[index];
-    if (!tr) {
-        ecs_assert(!ecs_field_is_set(it, index), ECS_INTERNAL_ERROR, NULL);
+    int16_t column = it->columns[index];
+    if (column >= 0) {
+        return ECS_ELEM(it->table->data.columns[column].data,
+            (ecs_size_t)size, it->offset);
+    }
+
+    return flecs_field_shared(it, size, index);
+error:
+    return NULL;
+}
+
+void* flecs_field_shared(
+    const ecs_iter_t *it,
+    size_t size,
+    int8_t index)
+{
+    if (!ecs_field_is_set(it, index)) {
         return NULL;
     }
 
-    ecs_assert(!(tr->hdr.cr->flags & EcsIdSparse), ECS_INVALID_OPERATION,
-        "field %d: use ecs_field_at to access fields for sparse components", 
-        index);
-
     ecs_entity_t src = it->sources[index];
-    ecs_table_t *table;
-    int32_t row;
-    if (!src) {
-        table = it->table;
-        row = it->offset;
+    ecs_record_t *r = flecs_entities_get(it->real_world, src);
+    ecs_table_t *table = r->table;
+
+    ecs_component_record_t *cr = flecs_components_get(
+        it->real_world, it->ids[index]);
+    const ecs_table_record_t *tr = flecs_component_get_table(cr, table);
+    int16_t column = tr->column;
+
+    return ECS_ELEM(table->data.columns[column].data,
+        (ecs_size_t)size, ECS_RECORD_TO_ROW(r->row));
+}
+
+static
+ecs_component_record_t* flecs_field_cr(
+    const ecs_iter_t *it,
+    int8_t index)
+{
+    ecs_component_record_t *cr = NULL;
+    const ecs_table_record_t *tr = it->trs[index];
+    if (!tr) {
+        const ecs_query_t *q = it->query;
+        if (q) {
+            ecs_component_record_t **cr_cache = flecs_query_impl(q)->cr_cache;
+            cr = cr_cache[index];
+            if (!cr || cr->id != it->ids[index]) {
+                cr = cr_cache[index] = flecs_components_get(
+                    it->real_world, it->ids[index]);
+            }
+        } else {
+            cr = flecs_components_get(it->real_world, it->ids[index]);
+        }
+        ecs_assert(cr != NULL, ECS_INTERNAL_ERROR, NULL);
     } else {
-        ecs_record_t *r = flecs_entities_get(it->real_world, src);
-        table = r->table;
-        row = ECS_RECORD_TO_ROW(r->row);
+        cr = tr->hdr.cr;
+    }
+    return cr;
+}
+
+ecs_sparse_t* flecs_field_sparse(
+    const ecs_iter_t *it,
+    int8_t index)
+{
+    ecs_check(it->flags & EcsIterIsValid, ECS_INVALID_PARAMETER,
+        "operation invalid before calling next()");
+    ecs_check(index >= 0, ECS_INVALID_PARAMETER,
+        "invalid field index %d", index);
+    ecs_check(index < it->field_count, ECS_INVALID_PARAMETER,
+        "field index %d out of bounds", index);
+    ecs_check((it->row_fields & (1llu << index)), ECS_INVALID_PARAMETER,
+        "field %d is not a row field", index);
+
+    if (it->sources[index]) {
+        return NULL;
     }
 
-    ecs_assert(table != NULL, ECS_INTERNAL_ERROR, NULL);
-    ecs_assert(tr->hdr.table == table, ECS_INTERNAL_ERROR, NULL);
-
-    int32_t column_index = tr->column;
-    ecs_assert(column_index != -1, ECS_INVALID_PARAMETER, 
-        "field %d: only components can be fetched with fields", index);
-    ecs_assert(column_index >= 0, ECS_INTERNAL_ERROR, NULL);
-    ecs_assert(column_index < table->column_count, ECS_INTERNAL_ERROR, NULL);
-
-    ecs_column_t *column = &table->data.columns[column_index];
-    ecs_assert((row < table->data.count) ||
-        (it->query && (it->query->flags & EcsQueryMatchEmptyTables)),
-            ECS_INTERNAL_ERROR, NULL);
-
-    return ECS_ELEM(column->data, (ecs_size_t)size, row);
+    return flecs_field_cr(it, index)->sparse;
 error:
     return NULL;
 }
@@ -179,22 +217,15 @@ void* ecs_field_at_w_size(
 {
     ecs_check(it->flags & EcsIterIsValid, ECS_INVALID_PARAMETER,
         "operation invalid before calling next()");
-    ecs_check(index >= 0, ECS_INVALID_PARAMETER, 
+    ecs_check(index >= 0, ECS_INVALID_PARAMETER,
         "invalid field index %d", index);
-    ecs_check(index < it->field_count, ECS_INVALID_PARAMETER, 
+    ecs_check(index < it->field_count, ECS_INVALID_PARAMETER,
         "field index %d out of bounds", index);
-    ecs_check(!size || ecs_field_size(it, index) == size || 
+    ecs_check(!size || ecs_field_size(it, index) == size ||
         !ecs_field_size(it, index),
             ECS_INVALID_PARAMETER, "mismatching size for field %d", index);
 
-    ecs_component_record_t *cr = NULL;
-    const ecs_table_record_t *tr = it->trs[index];
-    if (!tr) {
-        cr = flecs_components_get(it->real_world, it->ids[index]);
-        ecs_assert(cr != NULL, ECS_INTERNAL_ERROR, NULL);
-    } else {
-        cr = tr->hdr.cr;
-    }
+    ecs_component_record_t *cr = flecs_field_cr(it, index);
 
     ecs_assert((cr->flags & EcsIdSparse), ECS_INVALID_OPERATION,
         "use ecs_field to access fields for non-sparse components");
@@ -202,7 +233,7 @@ void* ecs_field_at_w_size(
 
     ecs_entity_t src = it->sources[index];
     if (!src) {
-        src = ecs_table_entities(it->table)[row + it->offset];
+        src = it->entities[row];
     }
 
     return flecs_sparse_get(cr->sparse, flecs_uto(int32_t, size), src);
@@ -312,17 +343,34 @@ int32_t ecs_field_column(
     const ecs_iter_t *it,
     int8_t index)
 {
-    ecs_check(index >= 0, ECS_INVALID_PARAMETER, 
+    ecs_check(index >= 0, ECS_INVALID_PARAMETER,
         "invalid field index %d", index);
-    ecs_check(index < it->field_count, ECS_INVALID_PARAMETER, 
+    ecs_check(index < it->field_count, ECS_INVALID_PARAMETER,
         "field index %d out of bounds", index);
 
-    const ecs_table_record_t *tr = it->trs[index];
-    if (tr) {
-        return tr->index;
-    } else {
+    if (!ecs_field_is_set(it, index)) {
         return -1;
     }
+
+    if (it->columns && it->columns[index] >= 0) {
+        return ecs_table_column_to_type_index(it->table, it->columns[index]);
+    }
+
+    if (it->trs && it->trs[index]) {
+        return it->trs[index]->index;
+    }
+
+    ecs_entity_t src = it->sources[index];
+    ecs_assert(src != 0, ECS_INTERNAL_ERROR, NULL);
+    ecs_record_t *r = flecs_entities_get(it->real_world, src);
+    ecs_assert(r != NULL, ECS_INTERNAL_ERROR, NULL);
+    ecs_assert(r->table != NULL, ECS_INTERNAL_ERROR, NULL);
+    ecs_component_record_t *cr = flecs_components_get(
+        it->real_world, it->ids[index]);
+    ecs_assert(cr != NULL, ECS_INTERNAL_ERROR, NULL);
+    const ecs_table_record_t *tr = flecs_component_get_table(cr, r->table);
+    ecs_assert(tr != NULL, ECS_INTERNAL_ERROR, NULL);
+    return tr->index;
 error:
     return 0;
 }
@@ -717,7 +765,7 @@ void ecs_iter_set_var(
         var->range.count = 0;
     }
 
-    it->constrained_vars |= flecs_ito(uint64_t, 1 << var_id);
+    it->constrained_vars |= 1llu << var_id;
 
     /* Update iterator for constrained iterator */
     flecs_query_iter_constrain(it);
@@ -771,7 +819,7 @@ void ecs_iter_set_var_as_range(
         var->entity = 0;
     }
 
-    it->constrained_vars |= flecs_uto(uint64_t, 1 << var_id);
+    it->constrained_vars |= 1llu << var_id;
 
     /* Update iterator for constrained iterator */
     flecs_query_iter_constrain(it);
@@ -788,7 +836,7 @@ bool ecs_iter_var_is_constrained(
         return ecs_iter_var_is_constrained(it->chain_it, var_id);
     }
 
-    return (it->constrained_vars & (flecs_uto(uint64_t, 1 << var_id))) != 0;
+    return (it->constrained_vars & (1llu << var_id)) != 0;
 }
 
 uint64_t ecs_iter_get_group(
@@ -868,7 +916,7 @@ bool ecs_page_next(
         /* Copy everything up to the private iterator data */
         ecs_os_memcpy(it, chain_it, offsetof(ecs_iter_t, priv_));
 
-        if (!chain_it->table) {
+        if (!chain_it->table && !chain_it->count) {
             goto yield; /* Task query */
         }
 
@@ -895,8 +943,12 @@ bool ecs_page_next(
                 iter->offset = 0;
                 it->offset = offset;
                 count = it->count -= offset;
-                it->entities = 
-                    &(ecs_table_entities(it->table)[it->offset]);
+                if (it->table) {
+                    it->entities =
+                        &(ecs_table_entities(it->table)[it->offset]);
+                } else {
+                    it->entities = &it->entities[offset];
+                }
             }
         }
 
@@ -933,8 +985,8 @@ ecs_iter_t ecs_worker_iter(
     ecs_check(it != NULL, ECS_INVALID_PARAMETER, NULL);
     ecs_check(it->next != NULL, ECS_INVALID_PARAMETER, NULL);
     ecs_check(count > 0, ECS_INVALID_PARAMETER, NULL);
-    ecs_check(index >= 0, ECS_INVALID_PARAMETER, 
-        "invalid field index %d", index);
+    ecs_check(index >= 0, ECS_INVALID_PARAMETER,
+        "invalid worker index %d", index);
     ecs_check(index < count, ECS_INVALID_PARAMETER, NULL);
 
     ecs_iter_t result = *it;
@@ -1003,7 +1055,11 @@ bool ecs_worker_next(
     it->count = per_worker;
     it->offset += first;
 
-    it->entities = &(ecs_table_entities(it->table)[it->offset]);
+    if (it->table) {
+        it->entities = &(ecs_table_entities(it->table)[it->offset]);
+    } else {
+        it->entities = &it->entities[first];
+    }
 
     return true;
 error:

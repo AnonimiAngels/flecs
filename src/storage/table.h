@@ -108,7 +108,6 @@ typedef struct ecs_table__t {
     ecs_bitset_t *bs_columns;        /* Bitset columns */
 
     struct ecs_table_record_t *records; /* Array with table records */
-    ecs_pair_record_t *childof_r;       /* ChildOf pair data */
 
 #ifdef FLECS_DEBUG_INFO
     /* Fields used for debug visualization */
@@ -137,7 +136,6 @@ struct ecs_data_t {
     int32_t size;
 };
 
-
 /** A table is the Flecs equivalent of an archetype. Tables store all entities
  * with a specific set of components. Tables are automatically created when an
  * entity has a set of components not previously observed before. When a new
@@ -147,7 +145,13 @@ struct ecs_table_t {
     ecs_flags32_t flags;             /* Flags for testing table properties */
     int16_t column_count;            /* Number of components (excluding tags) */
     uint16_t version;                /* Version of table */
+
     uint64_t bloom_filter;           /* For quick matching with queries */
+
+    ecs_flags32_t trait_flags;       /* Cached trait flags for entities in table */
+    int16_t keep;                    /* Refcount for keeping table alive. */
+    int16_t childof_index;           /* Quick access to index of ChildOf pair in table. */
+
     ecs_type_t type;                 /* Vector with component ids */
 
     ecs_data_t data;                 /* Component storage */
@@ -163,6 +167,8 @@ struct ecs_table_t {
     ecs_table__t *_;                 /* Infrequently accessed table metadata */
 };
 
+extern const int16_t flecs_table_empty_component_map[];
+
 /* Init table */
 void flecs_table_init(
     ecs_world_t *world,
@@ -174,18 +180,13 @@ ecs_table_t* flecs_table_find_or_create(
     ecs_world_t *world,
     ecs_type_t *type);
 
-/* Initialize columns for data */
-void flecs_table_init_data(
-    ecs_world_t *world,
-    ecs_table_t *table); 
-
 /* Reset a table to its initial state */
 void flecs_table_reset(
     ecs_world_t *world,
     ecs_table_t *table);
 
 /* Add a new entry to the table for the specified entity */
-int32_t flecs_table_append(
+void flecs_table_append(
     ecs_world_t *world,
     ecs_table_t *table,
     ecs_entity_t entity,
@@ -208,10 +209,10 @@ void flecs_table_move(
     int32_t new_index,
     ecs_table_t *old_table,
     int32_t old_index,
-    bool construct);
+    ecs_id_t emplace_id);
 
-/* Grow table with specified number of records. Populate table with entities,
- * starting from specified entity id. */
+/* Grow table with specified number of records. Populate table with the
+ * specified entity ids. */
 int32_t flecs_table_appendn(
     ecs_world_t *world,
     ecs_table_t *table,
@@ -232,7 +233,7 @@ int32_t* flecs_table_get_dirty_state(
 void flecs_init_root_table(
     ecs_world_t *world);
 
-/* Unset components in table */
+/* Remove components in table */
 void flecs_table_remove_actions(
     ecs_world_t *world,
     ecs_table_t *table);
@@ -242,7 +243,7 @@ void flecs_table_fini(
     ecs_world_t *world,
     ecs_table_t *table); 
 
-/* Free table */
+/* Free table type */
 void flecs_table_free_type(
     ecs_world_t *world,
     ecs_table_t *table);     
@@ -252,12 +253,6 @@ void flecs_table_merge(
     ecs_world_t *world,
     ecs_table_t *new_table,
     ecs_table_t *old_table);
-
-void flecs_table_swap(
-    ecs_world_t *world,
-    ecs_table_t *table,
-    int32_t row_1,
-    int32_t row_2);
 
 void flecs_table_mark_dirty(
     ecs_world_t *world,
@@ -270,23 +265,10 @@ void flecs_table_notify(
     ecs_id_t id,
     ecs_table_event_t *event);
 
-void flecs_table_delete_entities(
-    ecs_world_t *world,
-    ecs_table_t *table);
-
-/* Increase observer count of table */
+/* Increase traversable count of table */
 void flecs_table_traversable_add(
     ecs_table_t *table,
     int32_t value);
-
-void flecs_table_emit(
-    ecs_world_t *world,
-    ecs_table_t *table,
-    ecs_entity_t event);
-
-int32_t flecs_table_get_toggle_column(
-    ecs_table_t *table,
-    ecs_id_t id);
 
 ecs_bitset_t* flecs_table_get_toggle(
     ecs_table_t *table,
@@ -310,5 +292,23 @@ const ecs_ref_t* flecs_table_get_override(
     ecs_id_t id,
     const ecs_component_record_t *cr,
     ecs_ref_t *storage);
+
+void flecs_table_keep(
+    ecs_table_t *table);
+
+void flecs_table_release(
+    ecs_table_t *table);
+
+ecs_component_record_t* flecs_table_get_childof_cr(
+    const ecs_world_t *world,
+    const ecs_table_t *table);
+
+ecs_pair_record_t* flecs_table_get_childof_pr(
+    const ecs_world_t *world,
+    const ecs_table_t *table);
+
+ecs_hashmap_t* flecs_table_get_name_index(
+    const ecs_world_t *world,
+    const ecs_table_t *table);
 
 #endif

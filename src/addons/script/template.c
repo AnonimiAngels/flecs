@@ -53,10 +53,12 @@ void flecs_script_template_ctor(
 {
     ecs_world_t *world = ti->hooks.ctx;
     ecs_entity_t template_entity = ti->component;
+
+    /* Zero-initialize memory so that hooks can safely run destructors. */
+    flecs_default_ctor(ptr, count, ti);
     
     const EcsStruct *st = ecs_get(world, template_entity, EcsStruct);
     if (!st) {
-        ecs_os_memset(ptr, 0, count * ti->size);
         return;
     }
 
@@ -129,8 +131,11 @@ void flecs_script_template_instantiate(
     ecs_entity_t template_entity,
     const ecs_entity_t *entities,
     void *data,
-    int32_t count)
+    int32_t count,
+    bool allow_stale_entities)
 {
+    (void)allow_stale_entities;
+
     ecs_assert(!ecs_is_deferred(world), ECS_INTERNAL_ERROR, NULL);
 
     ecs_record_t *r = ecs_record_find(world, template_entity);
@@ -160,6 +165,7 @@ void flecs_script_template_instantiate(
     ecs_vec_t prev_using = v.r->using;
     ecs_vec_t prev_with = desc.runtime->with;
     ecs_vec_t prev_with_type_info = desc.runtime->with_type_info;
+
     v.r->using = template->using_;
     v.template_entity = template_entity;
     ecs_vec_init_t(NULL, &desc.runtime->with, ecs_value_t, 0);
@@ -178,12 +184,30 @@ void flecs_script_template_instantiate(
 
     v.entity = &instance_node;
 
-    int32_t i, m;
+    int32_t i, m, a;
     for (i = 0; i < count; i ++) {
         v.parent = entities[i];
-        ecs_assert(ecs_is_alive(world, v.parent), ECS_INTERNAL_ERROR, NULL);
+        if (!ecs_is_alive(world, v.parent)) {
+            ecs_assert(allow_stale_entities, ECS_INTERNAL_ERROR, NULL);
+            data = ECS_OFFSET(data, ti->size);
+            continue;
+        }
 
         instance_node.eval = entities[i];
+
+        /* Apply annotations, if any */
+        bool annot_failed = false;
+        for (a = 0; a < ecs_vec_count(&template->annot); a ++) {
+            ecs_script_annot_t *annot = ecs_vec_get_t(
+                &template->annot, ecs_script_annot_t*, a)[0];
+            if (flecs_script_apply_annot(&v, &instance_node, annot)) {
+                annot_failed = true;
+                break;
+            }
+        }
+        if (annot_failed) {
+            break;
+        }
 
         /* Create variables to hold template properties */
         ecs_script_vars_t *vars = flecs_script_vars_push(
@@ -207,8 +231,8 @@ void flecs_script_template_instantiate(
             for (m = 0; m < st->members.count; m ++) {
                 const ecs_member_t *member = &members[m];
 
-                /* Assign template property from template instance. Don't 
-                 * set name as variables will be resolved by frame offset. */
+                /* Assign template property from template instance. Don't
+                 * set the name, as variables will be resolved by frame offset. */
                 ecs_script_var_t *var = ecs_script_vars_declare(
                     vars, NULL /* member->name */);
                 var->value.type = member->type;
@@ -253,7 +277,8 @@ void flecs_on_template_set_event(
     ecs_defer_suspend(world);
 
     flecs_script_template_instantiate(
-        world, evt->template_entity, evt->entities, evt->data, evt->count);
+        world, evt->template_entity, evt->entities, evt->data, evt->count, 
+        true);
 
     ecs_defer_resume(world);
 }
@@ -294,7 +319,7 @@ void flecs_script_template_on_set(
     }
 
     flecs_script_template_instantiate(
-        world, template_entity, it->entities, data, it->count);
+        world, template_entity, it->entities, data, it->count, false);
     return;
 }
 
@@ -340,9 +365,11 @@ int flecs_script_template_eval_prop(
         }
 
         var->value.type = type;
-        var->value.ptr = flecs_stack_alloc(
+        var->value.ptr = flecs_stack_calloc(
             &v->r->stack, ti->size, ti->alignment);
         var->type_info = ti;
+
+        flecs_type_info_ctor(var->value.ptr, 1, ti);
 
         if (flecs_script_eval_expr(v, &node->expr, &var->value)) {
             return -1;
@@ -367,9 +394,7 @@ int flecs_script_template_eval_prop(
         type = var->value.type = value.type;
         var->type_info = ti;
 
-        if (ti->hooks.ctor) {
-            ti->hooks.ctor(var->value.ptr, 1, ti);
-        }
+        flecs_type_info_ctor(var->value.ptr, 1, ti);
 
         ecs_value_copy_w_type_info(v->world, ti, var->value.ptr, value.ptr);
         ecs_value_fini_w_type_info(v->world, ti, value.ptr);
@@ -490,6 +515,7 @@ int flecs_script_template_hoist_vars(
     return 0;
 }
 
+static
 ecs_script_template_t* flecs_script_template_init(
     ecs_script_impl_t *script)
 {
@@ -497,6 +523,8 @@ ecs_script_template_t* flecs_script_template_init(
     ecs_script_template_t *result = flecs_alloc_t(a, ecs_script_template_t);
     ecs_vec_init_t(NULL, &result->prop_defaults, ecs_script_var_t, 0);
     ecs_vec_init_t(NULL, &result->using_, ecs_entity_t, 0);
+    ecs_vec_init_t(NULL, &result->annot, ecs_script_annot_t*, 0);
+
     result->vars = ecs_script_vars_init(script->pub.world);
     return result;
 }
@@ -514,7 +542,7 @@ void flecs_script_template_fini(
         ecs_script_var_t *value = &values[i];
         const ecs_type_info_t *ti = value->type_info;
         if (ti->hooks.dtor) {
-            ti->hooks.dtor(value->value.ptr, 1, ti);
+            flecs_type_info_dtor(value->value.ptr, 1, ti);
         }
         flecs_free(a, ti->size, value->value.ptr);
     }
@@ -522,6 +550,7 @@ void flecs_script_template_fini(
     ecs_vec_fini_t(a, &template->prop_defaults, ecs_script_var_t);
 
     ecs_vec_fini_t(a, &template->using_, ecs_entity_t);
+    ecs_vec_fini_t(a, &template->annot, ecs_script_annot_t*);
     ecs_script_vars_fini(template->vars);
     flecs_free_t(a, ecs_script_template_t, template);
 }
@@ -540,7 +569,7 @@ int flecs_script_eval_template(
     template->entity = template_entity;
     template->node = node;
 
-    /* Variables are always presented to a template in a well defined order, so
+    /* Variables are always presented to a template in a well-defined order, so
      * we don't need dynamic variable binding. */
     bool old_dynamic_variable_binding = v->dynamic_variable_binding;
     v->dynamic_variable_binding = false;
@@ -565,9 +594,18 @@ int flecs_script_eval_template(
         ecs_set(v->world, template_entity, EcsComponent, {1, 1});
     }
 
-    template->type_info = ecs_get_type_info(v->world, template_entity);
+    /* Consume annotations, if any */
+    int32_t i, count = ecs_vec_count(&v->r->annot);
+    if (count) {
+        ecs_script_annot_t **annots = ecs_vec_first(&v->r->annot);
+        for (i = 0; i < count ; i ++) {
+            ecs_vec_append_t(&v->base.script->allocator, 
+                &template->annot, ecs_script_annot_t*)[0] = annots[i];
+        }
+        ecs_vec_clear(&v->r->annot);
+    }
 
-    ecs_add_pair(v->world, template_entity, EcsOnInstantiate, EcsOverride);
+    template->type_info = ecs_get_type_info(v->world, template_entity);
 
     EcsScript *script = ecs_ensure(v->world, template_entity, EcsScript);
     if (script->script) {

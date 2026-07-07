@@ -1,5 +1,5 @@
 /**
- * @file addons/http.c
+ * @file addons/http/http.c
  * @brief HTTP addon.
  *
  * This is a heavily modified version of the EmbeddableWebServer (see copyright
@@ -102,8 +102,8 @@ void http_sock_set_timeout(
     int r;
 #ifdef ECS_TARGET_POSIX
     struct timeval tv;
-    tv.tv_sec = timeout_ms * 1000;
-    tv.tv_usec = 0;
+    tv.tv_sec = timeout_ms / 1000;
+    tv.tv_usec = (timeout_ms % 1000) * 1000;
     r = setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&tv, sizeof tv);
 #else
     DWORD t = (DWORD)timeout_ms;
@@ -270,6 +270,9 @@ static
 char http_hex_2_int(char a, char b){
     a = (a <= '9') ? (char)(a - '0') : (char)((a & 0x7) + 9);
     b = (b <= '9') ? (char)(b - '0') : (char)((b & 0x7) + 9);
+    if (a < 0) {
+        return 0;
+    }
     return (char)((a << 4) + b);
 }
 
@@ -279,7 +282,7 @@ void http_decode_url_str(
 {
     char ch, *ptr, *dst = str;
     for (ptr = str; (ch = *ptr); ptr++) {
-        if (ch == '%') {
+        if (ch == '%' && ptr[1]) {
             dst[0] = http_hex_2_int(ptr[1], ptr[2]);
             dst ++;
             ptr += 2;
@@ -329,7 +332,7 @@ void http_header_buf_append(
     char ch)
 {
     if ((frag->header_buf_ptr - frag->header_buf) < 
-        ECS_SIZEOF(frag->header_buf)) 
+        (ECS_SIZEOF(frag->header_buf) - 1))
     {
         frag->header_buf_ptr[0] = ch;
         frag->header_buf_ptr ++;
@@ -855,7 +858,7 @@ void http_send_reply(
         return;
     }
 
-    /* Second, enqueue send request for response body */
+    /* Enqueue send request for response */
     req->sock = conn->sock;
     req->headers = headers;
     req->header_length = headers_length;
@@ -934,7 +937,17 @@ void http_recv_connection(
     }
 
     if (retries == ECS_HTTP_REQUEST_RECV_RETRY) {
-        http_close(&sock);
+        ecs_os_mutex_lock(srv->lock);
+        bool still_owns_sock = conn->pub.id == conn_id;
+        if (still_owns_sock) {
+            conn->sock = HTTP_SOCKET_INVALID;
+        }
+        ecs_os_mutex_unlock(srv->lock);
+        if (still_owns_sock) {
+            http_close(&sock);
+        } else {
+            sock = HTTP_SOCKET_INVALID;
+        }
     }
 
 done:
@@ -1352,7 +1365,7 @@ ecs_http_server_t* ecs_http_server_init(
 
 #ifndef ECS_TARGET_WINDOWS
     /* Ignore pipe signal. SIGPIPE can occur when a message is sent to a client
-     * but te client already disconnected. */
+     * but the client already disconnected. */
     signal(SIGPIPE, SIG_IGN);
 #endif
 
@@ -1464,11 +1477,12 @@ void ecs_http_server_dequeue(
     srv->stats_timeout += (double)delta_time;
 
     if ((1000 * srv->dequeue_timeout) > (double)ECS_HTTP_MIN_DEQUEUE_INTERVAL) {
+        double elapsed = srv->dequeue_timeout;
         srv->dequeue_timeout = 0;
 
         ecs_time_t t = {0};
         ecs_time_measure(&t);
-        int32_t request_count = http_dequeue_requests(srv, srv->dequeue_timeout);
+        int32_t request_count = http_dequeue_requests(srv, elapsed);
         srv->requests_processed += request_count;
         srv->requests_processed_total += request_count;
         double time_spent = ecs_time_measure(&t);

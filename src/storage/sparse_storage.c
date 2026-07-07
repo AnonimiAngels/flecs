@@ -1,3 +1,8 @@
+/**
+ * @file storage/sparse_storage.c
+ * @brief Sparse component storage.
+ */
+
 #include "../private_api.h"
 
 bool flecs_component_sparse_has(
@@ -139,19 +144,11 @@ ecs_entity_t flecs_component_sparse_remove_intern(
 
     ecs_iter_action_t on_remove = ti->hooks.on_remove;
     if (on_remove) {
-        const ecs_table_record_t *tr = NULL;
-        if (!(cr->flags & EcsIdDontFragment)) {
-            tr = flecs_component_get_table(cr, table);
-        }
-
-        flecs_invoke_hook(world, table, cr, tr, 1, row, 
-            &entity, cr->id, ti, EcsOnRemove, on_remove);
+        flecs_invoke_hook(world, table, cr, -1, 1, row,
+            &entity, cr->id, ti, EcsOnRemove, on_remove, ptr);
     }
 
-    ecs_xtor_t dtor = ti->hooks.dtor;
-    if (dtor) {
-        dtor(ptr, 1, ti);
-    }
+    flecs_type_info_dtor(ptr, 1, ti);
 
     flecs_sparse_remove(cr->sparse, 0, entity);
 
@@ -171,15 +168,6 @@ void flecs_component_sparse_dont_fragment_pair_remove(
         return;
     }
 
-    ecs_entity_t tgt = ecs_pair_second(world, cr->id);
-    if (!tgt) {
-        /* It's possible that the target entity is cleaned up as part of the 
-         * same entity that holds the relationship. If that's the case, the
-         * relationship will get cleaned up later anyway so we can exit here. */
-        ecs_assert(cr->flags & EcsIdMarkedForDelete, ECS_INTERNAL_ERROR, NULL);
-        return;
-    }
-
     ecs_type_t *type = flecs_sparse_get_t(
         parent->sparse, ecs_type_t, entity);
     if (!type) {
@@ -189,7 +177,7 @@ void flecs_component_sparse_dont_fragment_pair_remove(
     ecs_assert(type->count > 0, ECS_INTERNAL_ERROR, NULL);
 
     int32_t old_type_count = type->count;
-    flecs_type_remove(world, type, tgt);
+    flecs_type_remove_ignoring_generation(world, type, ECS_PAIR_SECOND(cr->id));
     ecs_assert(type->count != old_type_count, ECS_INTERNAL_ERROR, NULL);
     (void)old_type_count;
 
@@ -223,7 +211,7 @@ void flecs_component_sparse_remove(
 
     /* If id is a wildcard, remove entity from all matching ids. */
     if (dont_fragment && ecs_id_is_wildcard(cr->id)) {
-        /* A wildcard by itself can't be marked sparse so must be a pair. */
+        /* A wildcard by itself can't be marked sparse, so it must be a pair. */
         ecs_assert(ECS_IS_PAIR(id), ECS_INTERNAL_ERROR, NULL);
         ecs_assert(ECS_PAIR_SECOND(id) == EcsWildcard, 
             ECS_UNSUPPORTED,
@@ -286,22 +274,22 @@ void flecs_component_sparse_remove_all_id(
     const ecs_type_info_t *ti = cr->type_info;
     if (ti) {
         ecs_iter_action_t on_remove = ti->hooks.on_remove;
-        ecs_xtor_t dtor = ti->hooks.dtor;
+        bool dtor = ti->hooks.dtor != NULL;
 
         if (on_remove) {
             for (i = 0; i < count; i ++) {
                 ecs_entity_t e = entities[i];
                 ecs_record_t *r = flecs_entities_get(world, e);
-                flecs_invoke_hook(world, r->table, cr, NULL, 1, 
-                    ECS_RECORD_TO_ROW(r->row), &entities[i], component_id, ti, 
-                    EcsOnRemove, on_remove);
+                flecs_invoke_hook(world, r->table, cr, -1, 1,
+                    ECS_RECORD_TO_ROW(r->row), &entities[i], component_id, ti,
+                    EcsOnRemove, on_remove, NULL);
             }
         }
 
         if (dtor) {
             for (i = 0; i < count; i ++) {
                 void *ptr = flecs_sparse_get_dense(sparse, 0, i);
-                dtor(ptr, 1, ti);
+                flecs_type_info_dtor(ptr, 1, ti);
             }
         }
     }
@@ -447,19 +435,13 @@ void flecs_component_sparse_override(
         }
     }
 
-    ecs_xtor_t ctor = ti->hooks.ctor;
     if (!override_ptr) {
-        if (ctor) {
-            ctor(ptr, 1, ti);
-        }
+        flecs_type_info_ctor(ptr, 1, ti);
     } else {
-        ecs_copy_t copy = ti->hooks.copy_ctor;
-        if (copy) {
-            copy(ptr, override_ptr, 1, ti);
+        if (ti->hooks.copy_ctor) {
+            flecs_type_info_copy_ctor(ptr, override_ptr, 1, ti);
         } else {
-            if (ctor) {
-                ctor(ptr, 1, ti);
-            }
+            flecs_type_info_ctor(ptr, 1, ti);
             ecs_os_memcpy(ptr, override_ptr, ti->size);
         }
     }
@@ -509,13 +491,8 @@ void* flecs_component_sparse_insert(
         return ptr;
     }
 
-    const ecs_table_record_t *tr = NULL;
-    if (!(cr->flags & EcsIdDontFragment)) {
-        tr = flecs_component_get_table(cr, table);
-    }
-
-    flecs_invoke_hook(world, table, cr, tr, 1, row, 
-        &entity, component_id, ti, EcsOnAdd, on_add);
+    flecs_invoke_hook(world, table, cr, -1, 1, row,
+        &entity, component_id, ti, EcsOnAdd, on_add, ptr);
 
     return ptr;
 }
@@ -545,13 +522,8 @@ void* flecs_component_sparse_emplace(
         return ptr;
     }
 
-    const ecs_table_record_t *tr = NULL;
-    if (!(cr->flags & EcsIdDontFragment)) {
-        tr = flecs_component_get_table(cr, table);
-    }
-
-    flecs_invoke_hook(world, table, cr, tr, 1, row, 
-        &entity, cr->id, ti, EcsOnAdd, on_add);
+    flecs_invoke_hook(world, table, cr, -1, 1, row,
+        &entity, cr->id, ti, EcsOnAdd, on_add, ptr);
 
     return ptr;
 }

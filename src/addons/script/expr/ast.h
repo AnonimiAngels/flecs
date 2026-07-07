@@ -1,12 +1,12 @@
 /**
- * @file addons/script/expr_ast.h
+ * @file addons/script/expr/ast.h
  * @brief Script expression AST.
  */
 
 #ifndef FLECS_SCRIPT_EXPR_AST_H
 #define FLECS_SCRIPT_EXPR_AST_H
 
-#define FLECS_EXPR_SMALL_DATA_SIZE (24)
+#define FLECS_EXPR_SWIZZLE_MAX (16)
 
 typedef enum ecs_expr_node_kind_t {
     EcsExprValue,
@@ -64,6 +64,7 @@ typedef struct ecs_expr_initializer_t {
     const ecs_type_info_t *type_info;
     bool is_collection;
     bool is_dynamic;
+    bool is_partial;
 } ecs_expr_initializer_t;
 
 typedef struct ecs_expr_variable_t {
@@ -90,6 +91,10 @@ typedef struct ecs_expr_binary_t {
     ecs_expr_node_t *left;
     ecs_expr_node_t *right;
     ecs_token_kind_t operator;
+
+    /* For vector operations */
+    ecs_entity_t vector_type;
+    int32_t vector_count;
 } ecs_expr_binary_t;
 
 typedef struct ecs_expr_member_t {
@@ -97,6 +102,9 @@ typedef struct ecs_expr_member_t {
     ecs_expr_node_t *left;
     const char *member_name;
     uintptr_t offset;
+    int32_t swizzle_count;
+    ecs_size_t swizzle_size;
+    uint16_t swizzle[FLECS_EXPR_SWIZZLE_MAX];
 } ecs_expr_member_t;
 
 typedef struct ecs_expr_function_t {
@@ -112,6 +120,7 @@ typedef struct ecs_expr_element_t {
     ecs_expr_node_t *left;
     ecs_expr_node_t *index;
     ecs_size_t elem_size;
+    int32_t elem_count;
 } ecs_expr_element_t;
 
 typedef struct ecs_expr_component_t {
@@ -152,6 +161,11 @@ ecs_expr_variable_t* flecs_expr_variable_from(
     ecs_expr_node_t *node,
     const char *name);
 
+ecs_expr_member_t* flecs_expr_member_from(
+    ecs_script_t *script,
+    ecs_expr_node_t *node,
+    const char *name);
+
 ecs_expr_value_node_t* flecs_expr_bool(
     ecs_parser_t *parser,
     bool value);
@@ -179,10 +193,6 @@ ecs_expr_value_node_t* flecs_expr_string(
 ecs_expr_interpolated_string_t* flecs_expr_interpolated_string(
     ecs_parser_t *parser,
     const char *value);
-
-ecs_expr_value_node_t* flecs_expr_entity(
-    ecs_parser_t *parser,
-    ecs_entity_t value);
 
 ecs_expr_initializer_t* flecs_expr_initializer(
     ecs_parser_t *parser);

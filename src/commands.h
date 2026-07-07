@@ -13,8 +13,10 @@ typedef enum ecs_cmd_kind_t {
     EcsCmdAdd,
     EcsCmdRemove,   
     EcsCmdSet,
+    EcsCmdSetDontFragment,
     EcsCmdEmplace,
     EcsCmdEnsure,
+    EcsCmdEnsureDontFragment,
     EcsCmdModified,
     EcsCmdModifiedNoHook,
     EcsCmdAddModified,
@@ -85,11 +87,6 @@ bool flecs_defer_begin(
     ecs_world_t *world,
     ecs_stage_t *stage);
 
-/* End deferred mode (executes commands when stage->deref becomes 0). */
-bool flecs_defer_end(
-    ecs_world_t *world,
-    ecs_stage_t *stage);
-
 /* Purge command queue without executing commands. */
 bool flecs_defer_purge(
     ecs_world_t *world,
@@ -133,7 +130,7 @@ bool flecs_defer_clear(
     ecs_stage_t *stage,
     ecs_entity_t entity);
 
-/* Insert delete_with/remove_all command*/
+/* Insert delete_with/remove_all command. */
 bool flecs_defer_on_delete_action(
     ecs_stage_t *stage,
     ecs_id_t id,
